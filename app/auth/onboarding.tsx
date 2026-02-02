@@ -71,8 +71,15 @@ export default function OnboardingScreen() {
                         />
                     </View>
 
+                    <View style={styles.disclaimerContainer}>
+                        <Text style={styles.disclaimerText}>
+                            Note: SnapCal provides estimates only and is not a medical device.
+                            Please consult a healthcare professional before making significant dietary changes.
+                        </Text>
+                    </View>
+
                     <TouchableOpacity style={styles.button} onPress={handleStart}>
-                        <Text style={styles.buttonText}>Start Tracking</Text>
+                        <Text style={styles.buttonText}>Agree & Start Tracking</Text>
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
@@ -133,5 +140,17 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 18,
         fontWeight: 'bold',
+    },
+    disclaimerContainer: {
+        marginVertical: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        padding: 12,
+        borderRadius: 8,
+    },
+    disclaimerText: {
+        color: '#888',
+        fontSize: 12,
+        lineHeight: 18,
+        textAlign: 'center',
     }
 });

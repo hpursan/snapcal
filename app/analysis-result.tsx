@@ -5,11 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMeals } from '@/context/MealContext';
 import { useState, useEffect } from 'react';
 import { GlowInput } from '@/components/GlowInput';
+import * as Haptics from 'expo-haptics';
 
 export default function AnalysisResultScreen() {
     const router = useRouter();
     const { imageUri } = useLocalSearchParams();
-    const { addMeal } = useMeals();
+    const { addMeal, remainingScans, decrementScanQuota } = useMeals();
 
     const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -28,11 +29,25 @@ export default function AnalysisResultScreen() {
         if (!imageUri) return;
 
         const analyze = async () => {
+            // 1. Check Limits
+            if (remainingScans <= 0) {
+                setIsLoading(false);
+                setError("You have reached your daily limit of 5 scans.");
+                setDescription("Please come back tomorrow or upgrade to Pro.");
+                return;
+            }
+
             try {
                 setIsLoading(true);
+                setError(null);
+
                 // Dynamically import to avoid circular dependency issues if any
                 const { analyzeFoodImage } = await import('@/services/FoodAnalysisService');
                 const data = await analyzeFoodImage(imageUri as string);
+
+                // 2. Decrement Quota & Haptic Success
+                decrementScanQuota();
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
                 setFoodName(data.foodName);
                 setDescription(data.description);
@@ -44,7 +59,8 @@ export default function AnalysisResultScreen() {
             } catch (err) {
                 console.error(err);
                 setError("Could not analyze image. Please try again.");
-                setDescription("Analysis failed.");
+                setDescription("Analysis failed. Please check your connection.");
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             } finally {
                 setIsLoading(false);
             }

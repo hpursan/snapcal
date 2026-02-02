@@ -32,6 +32,8 @@ interface MealContextType {
     updateGoals: (newGoals: Partial<UserGoals>) => void;
     clearAllData: () => Promise<void>;
     isLoading: boolean;
+    remainingScans: number;
+    decrementScanQuota: () => void;
     todayStats: {
         calories: number;
         protein: number;
@@ -61,15 +63,35 @@ export function MealProvider({ children }: { children: ReactNode }) {
 
     const [meals, setMeals] = useState<Meal[]>([]);
 
+    const [remainingScans, setRemainingScans] = useState(5);
+    const [lastScanDate, setLastScanDate] = useState<string | null>(null);
+
     // Load Data on Mount
     useEffect(() => {
         const loadData = async () => {
             try {
                 const savedMeals = await AsyncStorage.getItem(STORAGE_KEYS.MEALS);
                 const savedGoals = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
+                const savedScans = await AsyncStorage.getItem('snapcal_remaining_scans');
+                const savedDate = await AsyncStorage.getItem('snapcal_last_scan_date');
 
                 if (savedMeals) setMeals(JSON.parse(savedMeals));
                 if (savedGoals) setGoals(JSON.parse(savedGoals));
+
+                // Check Daily Limit Reset
+                const today = new Date().toDateString();
+                if (savedDate !== today) {
+                    // New Day (or first launch) -> Reset to 5
+                    setRemainingScans(5);
+                    setLastScanDate(today);
+                    await AsyncStorage.setItem('snapcal_remaining_scans', '5');
+                    await AsyncStorage.setItem('snapcal_last_scan_date', today);
+                } else {
+                    // Same Day -> Load remaining
+                    if (savedScans) setRemainingScans(parseInt(savedScans));
+                    setLastScanDate(savedDate);
+                }
+
             } catch (e) {
                 console.error("Failed to load persistence data", e);
             } finally {
@@ -89,6 +111,14 @@ export function MealProvider({ children }: { children: ReactNode }) {
         const updated = { ...goals, ...newGoals };
         setGoals(updated);
         await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(updated));
+    };
+
+    const decrementScanQuota = async () => {
+        if (remainingScans > 0) {
+            const newValue = remainingScans - 1;
+            setRemainingScans(newValue);
+            await AsyncStorage.setItem('snapcal_remaining_scans', newValue.toString());
+        }
     };
 
     const addMeal = (meal: Omit<Meal, 'id' | 'timestamp'>) => {
@@ -124,6 +154,9 @@ export function MealProvider({ children }: { children: ReactNode }) {
                 fats: 65,
                 isOnboarded: false,
             });
+            // Reset Limits
+            setRemainingScans(5);
+            setLastScanDate(new Date().toDateString());
         } catch (e) {
             console.error("Failed to clear data", e);
         }
@@ -149,7 +182,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
     );
 
     return (
-        <MealContext.Provider value={{ meals, goals, addMeal, removeMeal, updateMeal, updateGoals, clearAllData, todayStats, isLoading }}>
+        <MealContext.Provider value={{ meals, goals, addMeal, removeMeal, updateMeal, updateGoals, clearAllData, todayStats, isLoading, remainingScans, decrementScanQuota }}>
             {children}
         </MealContext.Provider>
     );
