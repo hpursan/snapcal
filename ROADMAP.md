@@ -4,20 +4,20 @@ This roadmap outlines the steps to take SnapCal from development to a production
 
 ## 1. Secure AI Infrastructure (Critical)
 Currently, the app uses an API Key embedded in the code. This is **unsafe** for production.
-- [ ] **Create Backend Proxy:** Set up a simple Edge Function (Supabase/Firebase/Cloudflare).
-    - [ ] Endpoint: `POST /analyze-food`
-    - [ ] Inputs: Image (Base64), User ID (Anonymous).
-    - [ ] Logic: Authenticate request, check scan limits, call Google Gemini, return JSON.
-    - [ ] **Privacy:** Do not log the image. Strip PII from logs.
-- [ ] **Migrate App:** Update `FoodAnalysisService.ts` to call your backend URL instead of Google directly.
+- [x] **Create Backend Proxy:** Set up a simple Edge Function (Supabase/Firebase/Cloudflare).
+    - [x] Endpoint: `POST /analyze-food`
+    - [x] Inputs: Image (Base64), User ID (Anonymous).
+    - [x] Logic: Authenticate request, check scan limits, call Google Gemini, return JSON.
+    - [x] **Privacy:** Do not log the image. Strip PII from logs.
+- [x] **Migrate App:** Update `FoodAnalysisService.ts` to call your backend URL instead of Google directly.
 
 ## 2. Cost Management & Usage Limits
 To prevent unlimited Gemini API usage:
-- [ ] **Implement Daily Scan Limit:**
-    - [ ] Add `scansToday` and `lastScanDate` tracking in `AsyncStorage`.
-    - [ ] Limit Free users to **5 scans/day**.
-    - [ ] Show "Limit Reached" UI with countdown to refresh.
-- [ ] **Anonymous User ID:** Generate a random UUID on first install to track usage quota on the backend (prevents simple uninstall/reinstall abuse).
+- [x] **Implement Daily Scan Limit:**
+    - [x] Add `scansToday` and `lastScanDate` tracking in `AsyncStorage`.
+    - [x] Limit Free users to **5 scans/day**.
+    - [x] Show "Limit Reached" UI with countdown to refresh.
+- [x] **Anonymous User ID:** Generate a random UUID on first install to track usage quota on the backend (prevents simple uninstall/reinstall abuse).
 
 ## 3. Privacy Assurance (The Edge)
 SnapCal's selling point is privacy.
@@ -29,10 +29,10 @@ SnapCal's selling point is privacy.
 - [ ] **App Icon:** Generate a premium App Icon (1024x1024).
 - [ ] **Splash Screen:** Create a branded splash screen matching the theme.
 - [ ] **Error States:** Add friendly error screens for "No Internet", "API Error", "Limit Reached".
-- [ ] **Haptic Feedback:** Add subtle vibrations on successful scan/log.
+- [x] **Haptic Feedback:** Add subtle vibrations on successful scan/log.
 
 ## 5. App Store Compliance
-- [ ] **Health Disclaimer:** Add a distinct disclaimer screen or modal: "Not a medical device. Consult a doctor..." (Apple Requirement).
+- [x] **Health Disclaimer:** Add a distinct disclaimer screen or modal: "Not a medical device. Consult a doctor..." (Apple Requirement).
 - [ ] **Info.plist Strings:** Ensure `NSCameraUsageDescription` and `NSPhotoLibraryUsageDescription` are clear and polite.
 - [ ] **Privacy Policy URL:** Create a simple hosted page (Notion/GitHub Pages) for the App Store link.
 
