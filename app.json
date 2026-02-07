@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hpursan.aperioesca",
+      "bundleDisplayName": "Aperioesca",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
