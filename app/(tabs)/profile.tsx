@@ -39,7 +39,7 @@ export default function ProfileScreen() {
     };
 
     const handleOpenPrivacyPolicy = async () => {
-        const url = 'https://hpursan.github.io/aperioesca-legal/privacy.html';
+        const url = 'https://ashlunar.dev/aperioesca/privacy.html';
         const supported = await Linking.canOpenURL(url);
         if (supported) {
             await Linking.openURL(url);
@@ -49,7 +49,7 @@ export default function ProfileScreen() {
     };
 
     const handleOpenTerms = async () => {
-        const url = 'https://hpursan.github.io/aperioesca-legal/terms.html';
+        const url = 'https://ashlunar.dev/aperioesca/terms.html';
         const supported = await Linking.canOpenURL(url);
         if (supported) {
             await Linking.openURL(url);
