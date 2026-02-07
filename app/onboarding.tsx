@@ -11,21 +11,21 @@ const { width } = Dimensions.get('window');
 const SLIDES = [
     {
         icon: 'flash' as const,
-        iconColor: '#FF6B6B',
+        iconColor: '#FF6B9D',
         title: 'Energy Bands,\nNot Calories',
-        body: 'Snapcal helps you understand your meals through simple energy bands—Light, Moderate, or Heavy.\n\nNo math, no guilt, just awareness.',
-    },
-    {
-        icon: 'lock-closed' as const,
-        iconColor: '#4ECDC4',
-        title: 'Your Data\nStays Private',
-        body: 'Everything is stored locally on your device. No cloud sync, no accounts, no tracking.\n\nYour food journal is yours alone.',
+        body: 'Aperioesca shows you Light, Moderate, or Heavy energy bands.\n\nNo math, no guilt, just awareness.',
     },
     {
         icon: 'camera' as const,
+        iconColor: '#6FEDD6',
+        title: 'How It Works',
+        body: '1. Tap the camera icon\n2. Take a photo of your meal\n3. Get instant energy insights\n\nThat\'s it!',
+    },
+    {
+        icon: 'lock-closed' as const,
         iconColor: '#A18CD1',
-        title: 'Ready to\nGet Started?',
-        body: 'Snap a photo of your next meal and get instant insights.\n\nLet\'s build awareness together.',
+        title: 'Your Data\nStays Private',
+        body: 'Everything stored locally on your device. No accounts, no tracking.\n\nReady to start?',
     },
 ];
 

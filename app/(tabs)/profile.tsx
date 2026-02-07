@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Switch } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Switch, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MealService } from '@/services/MealService';
 import { OnboardingService } from '@/services/OnboardingService';
@@ -36,6 +36,26 @@ export default function ProfileScreen() {
                 }
             }
         ]);
+    };
+
+    const handleOpenPrivacyPolicy = async () => {
+        const url = 'https://hpursan.github.io/aperioesca-legal/privacy.html';
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+            await Linking.openURL(url);
+        } else {
+            Alert.alert('Error', 'Unable to open Privacy Policy');
+        }
+    };
+
+    const handleOpenTerms = async () => {
+        const url = 'https://hpursan.github.io/aperioesca-legal/terms.html';
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+            await Linking.openURL(url);
+        } else {
+            Alert.alert('Error', 'Unable to open Terms of Service');
+        }
     };
 
     return (
@@ -77,6 +97,27 @@ export default function ProfileScreen() {
                             Your meal photos and logs are stored locally on your device.
                             AI analysis is stateless (no images saved on server).
                         </Text>
+
+                        <View style={styles.divider} />
+
+                        {/* Legal Links */}
+                        <TouchableOpacity style={styles.linkRow} onPress={handleOpenPrivacyPolicy}>
+                            <View style={styles.row}>
+                                <Ionicons name="document-text-outline" size={24} color="#6FEDD6" />
+                                <Text style={[styles.label, { color: '#6FEDD6' }]}>Privacy Policy</Text>
+                            </View>
+                            <Ionicons name="open-outline" size={20} color="#6FEDD6" />
+                        </TouchableOpacity>
+
+                        <View style={styles.divider} />
+
+                        <TouchableOpacity style={styles.linkRow} onPress={handleOpenTerms}>
+                            <View style={styles.row}>
+                                <Ionicons name="document-text-outline" size={24} color="#FF6B9D" />
+                                <Text style={[styles.label, { color: '#FF6B9D' }]}>Terms of Service</Text>
+                            </View>
+                            <Ionicons name="open-outline" size={20} color="#FF6B9D" />
+                        </TouchableOpacity>
                     </BlurView>
 
                     <TouchableOpacity style={styles.button} onPress={handleReset}>
@@ -148,6 +189,11 @@ const styles = StyleSheet.create({
         padding: 18,
         borderRadius: 16,
         alignItems: 'center',
+    },
+    linkRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
     buttonText: {
         color: '#ff5252',
