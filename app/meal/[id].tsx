@@ -1,236 +1,139 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
-import { useMeals } from '@/context/MealContext';
 import { useState, useEffect } from 'react';
-import { GlowInput } from '@/components/GlowInput';
+import { MealService } from '@/services/MealService';
+import { MealEntry, ENERGY_BAND_LABELS } from '@/types/Meal';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { GlassBackground } from '@/components/GlassBackground';
+import { BlurView } from 'expo-blur';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function EditMealScreen() {
+export default function MealDetailScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { meals, updateMeal } = useMeals();
+    const colorScheme = useColorScheme();
+    const isDark = colorScheme === 'dark';
 
-    // Find meal from context
-    const meal = meals.find(m => m.id === id);
-
-    const [isEditing, setIsEditing] = useState(false);
-
-    // Initial Data
-    const [foodName, setFoodName] = useState("");
-    const [calories, setCalories] = useState("0");
-    const [protein, setProtein] = useState("0");
-    const [carbs, setCarbs] = useState("0");
-    const [fats, setFats] = useState("0");
+    const [meal, setMeal] = useState<MealEntry | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (meal) {
-            setFoodName(meal.name);
-            setCalories(meal.calories.toString());
-            setProtein(meal.protein.toString());
-            setCarbs(meal.carbs.toString());
-            setFats(meal.fats.toString());
+        if (id) {
+            loadMeal();
         }
-    }, [meal]);
+    }, [id]);
 
+    const loadMeal = async () => {
+        const found = await MealService.getMealById(id as string);
+        setMeal(found || null);
+        setLoading(false);
+    };
+
+    const handleDelete = () => {
+        Alert.alert("Delete Meal", "Are you sure? This cannot be undone.", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                    await MealService.deleteMeal(id as string);
+                    router.back();
+                }
+            }
+        ]);
+    };
+
+    if (loading) {
+        return (
+            <GlassBackground>
+                <View style={[styles.container, styles.center]}>
+                    <ActivityIndicator size="large" color="#fff" />
+                </View>
+            </GlassBackground>
+        );
+    }
 
     if (!meal) {
         return (
-            <View style={styles.container}>
-                <Text style={{ color: 'white', textAlign: 'center', marginTop: 100 }}>Meal not found</Text>
-                <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-                    <Text style={{ color: Colors.dark.tint, textAlign: 'center' }}>Go Back</Text>
-                </TouchableOpacity>
-            </View>
-        )
+            <GlassBackground>
+                <View style={[styles.container, styles.center]}>
+                    <Text style={styles.text}>Meal not found.</Text>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>Go Back</Text>
+                    </TouchableOpacity>
+                </View>
+            </GlassBackground>
+        );
     }
 
-    const validateNumber = (text: string, setter: (val: string) => void) => {
-        if (/^\d*$/.test(text)) {
-            setter(text);
-        }
-    };
-
-    const [isDirty, setIsDirty] = useState(false);
-
-    useEffect(() => {
-        if (meal) {
-            const hasChanged =
-                meal.name !== foodName ||
-                meal.calories.toString() !== calories ||
-                meal.protein.toString() !== protein ||
-                meal.carbs.toString() !== carbs ||
-                meal.fats.toString() !== fats;
-
-            setIsDirty(hasChanged);
-        }
-    }, [foodName, calories, protein, carbs, fats, meal]);
-
-    const handleSave = () => {
-        if (!isDirty) return;
-        updateMeal(meal.id, {
-            name: foodName,
-            calories: parseInt(calories) || 0,
-            protein: parseInt(protein) || 0,
-            carbs: parseInt(carbs) || 0,
-            fats: parseInt(fats) || 0,
-        });
-        router.back();
-    };
-
     return (
-        <View style={styles.container}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+        <GlassBackground>
+            <View style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+                    {/* Full Bleed Image */}
+                    <View style={styles.imageContainer}>
+                        <Image source={{ uri: meal.photoUri }} style={styles.image} />
+                        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+                            <Ionicons name="close-circle" size={36} color="rgba(0,0,0,0.5)" />
+                        </TouchableOpacity>
+                    </View>
 
-                {/* Image Preview */}
-                <View style={styles.imageContainer}>
-                    {meal.imageUri ? (
-                        <Image source={{ uri: meal.imageUri }} style={styles.image} />
-                    ) : (
-                        <View style={[styles.image, { backgroundColor: '#333' }]} />
-                    )}
-                    <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-                        <Ionicons name="close-circle" size={32} color="rgba(255,255,255,0.8)" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Content Card */}
-                <View style={styles.card}>
-                    <View style={styles.headerRow}>
-                        {isEditing ? (
-                            <GlowInput
-                                style={[styles.foodNameInput, { color: Colors.dark.text, borderBottomWidth: 0 }]}
-                                value={foodName}
-                                onChangeText={setFoodName}
-                                autoFocus
-                                glowColor={Colors.dark.tint}
-                            />
-                        ) : (
-                            <Text style={styles.foodName}>{foodName}</Text>
-                        )}
-
-                        <View style={styles.caloriesBadge}>
-                            {isEditing ? (
-                                <GlowInput
-                                    style={[styles.caloriesText]}
-                                    value={calories}
-                                    onChangeText={(text) => validateNumber(text, setCalories)}
-                                    keyboardType="numeric"
-                                    glowColor="#fff"
-                                />
-                            ) : (
-                                <Text style={styles.caloriesText}>{calories}</Text>
-                            )}
-                            <Text style={styles.caloriesLabel}>kcal</Text>
+                    {/* Glass Sheet Content */}
+                    <BlurView intensity={80} tint="light" style={styles.glassSheet}>
+                        {/* Header */}
+                        <View style={styles.header}>
+                            <View>
+                                <Text style={styles.mealType}>
+                                    {meal.mealType.toUpperCase()}
+                                </Text>
+                                <Text style={styles.date}>
+                                    {new Date(meal.createdAt).toLocaleString()}
+                                </Text>
+                            </View>
+                            <TouchableOpacity onPress={handleDelete} style={styles.deleteIcon}>
+                                <Ionicons name="trash-outline" size={24} color="#ff4444" />
+                            </TouchableOpacity>
                         </View>
-                    </View>
 
-                    <Text style={styles.timestamp}>Logged at: {new Date(meal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                        {/* Band Card */}
+                        <View style={styles.dataCard}>
+                            <Text style={styles.label}>Energy Band</Text>
+                            <Text style={styles.bandValue}>
+                                {ENERGY_BAND_LABELS[meal.energyBand]}
+                            </Text>
+                            <View style={[styles.badge, styles[`conf_${meal.confidence}`]]}>
+                                <Text style={styles.badgeText}>{meal.confidence} confidence</Text>
+                            </View>
+                        </View>
 
-                    <View style={styles.divider} />
+                        {/* Insight / Reasoning */}
+                        <View style={styles.dataCard}>
+                            <Text style={styles.label}>Analysis</Text>
+                            <Text style={styles.reasoning}>"{meal.reasoning}"</Text>
 
-                    {/* Macros */}
-                    <View style={styles.macrosContainer}>
-                        <MacroItem
-                            label="Protein"
-                            value={protein}
-                            onChange={(text) => validateNumber(text, setProtein)}
-                            isEditing={isEditing}
-                            color={Colors.dark.primary}
-                        />
-                        <MacroItem
-                            label="Carbs"
-                            value={carbs}
-                            onChange={(text) => validateNumber(text, setCarbs)}
-                            isEditing={isEditing}
-                            color={Colors.dark.success}
-                        />
-                        <MacroItem
-                            label="Fats"
-                            value={fats}
-                            onChange={(text) => validateNumber(text, setFats)}
-                            isEditing={isEditing}
-                            color={Colors.dark.accent}
-                        />
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(!isEditing)}>
-                        <Text style={styles.editText}>{isEditing ? "Done" : "Edit Details"}</Text>
-                    </TouchableOpacity>
-
-                </View>
-            </ScrollView>
-
-            {/* Bottom Action Bar */}
-            <View style={styles.actionBar}>
-                {isEditing && isDirty ? (
-                    <>
-                        <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={() => {
-                            // Reset values
-                            setFoodName(meal.name);
-                            setCalories(meal.calories.toString());
-                            setProtein(meal.protein.toString());
-                            setCarbs(meal.carbs.toString());
-                            setFats(meal.fats.toString());
-                            setIsEditing(false);
-                        }}>
-                            <Ionicons name="close" size={24} color="#fff" />
-                            <Text style={styles.actionButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={[styles.actionButton, styles.saveButton]} onPress={handleSave}>
-                            <Text style={styles.actionButtonText}>Save</Text>
-                            <Ionicons name="save" size={24} color="#fff" style={{ marginLeft: 8 }} />
-                        </TouchableOpacity>
-                    </>
-                ) : (
-                    <TouchableOpacity style={[styles.actionButton, { backgroundColor: Colors.dark.gray }]} onPress={() => router.back()}>
-                        <Text style={styles.actionButtonText}>Close</Text>
-                    </TouchableOpacity>
-                )}
+                            <View style={styles.flags}>
+                                {meal.flags.mixedPlate && <Text style={styles.flag}>🍲 Mixed Plate</Text>}
+                                {meal.flags.sharedDish && <Text style={styles.flag}>👥 Shared Dish</Text>}
+                                {meal.flags.unclearPortions && <Text style={styles.flag}>❓ Unclear Portions</Text>}
+                            </View>
+                        </View>
+                    </BlurView>
+                </ScrollView>
             </View>
-        </View>
+        </GlassBackground>
     );
 }
 
-function MacroItem({ label, value, color, isEditing, onChange }: {
-    label: string,
-    value: string,
-    color: string,
-    isEditing: boolean,
-    onChange: (val: string) => void
-}) {
-    return (
-        <View style={styles.macroItem}>
-            {isEditing ? (
-                <GlowInput
-                    style={[styles.macroValue, { color }]}
-                    value={value}
-                    onChangeText={onChange}
-                    keyboardType="numeric"
-                    glowColor={color}
-                />
-            ) : (
-                <Text style={[styles.macroValue, { color }]}>{value}g</Text>
-            )}
-            <Text style={styles.macroLabel}>{label}</Text>
-        </View>
-    )
-}
-
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.dark.background,
-    },
-    scrollContent: {
-        paddingBottom: 120,
-    },
+    container: { flex: 1 },
+    center: { justifyContent: 'center', alignItems: 'center' },
+    scroll: { paddingBottom: 50 },
+
     imageContainer: {
-        height: 300,
         width: '100%',
+        height: 350,
         position: 'relative',
     },
     image: {
@@ -242,121 +145,88 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 50,
         right: 20,
-        zIndex: 10,
+        backgroundColor: '#fff',
+        borderRadius: 20,
     },
-    card: {
-        backgroundColor: Colors.dark.cardBackground,
+
+    // key change: glassSheet instead of solid white content
+    glassSheet: {
+        marginTop: -24,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        marginTop: -24,
         padding: 24,
+        paddingBottom: 60,
+        overflow: 'hidden',
+        backgroundColor: 'rgba(255,255,255,0.65)', // High opacity glass for readability
         minHeight: 500,
     },
-    headerRow: {
+
+    header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
+        marginBottom: 24,
+    },
+    mealType: { fontSize: 28, fontWeight: '800', color: '#222' },
+    date: { color: '#666', marginTop: 4 },
+    deleteIcon: { padding: 8 },
+
+    dataCard: {
+        backgroundColor: 'rgba(255,255,255,0.5)',
+        padding: 16,
+        borderRadius: 16,
         marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#fff',
     },
-    foodName: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: Colors.dark.text,
-        flex: 1,
-        marginRight: 10,
-    },
-    foodNameInput: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: Colors.dark.text,
-        flex: 1,
-        marginRight: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.dark.gray,
-    },
-    caloriesBadge: {
-        alignItems: 'center',
-        backgroundColor: Colors.dark.gray,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-    },
-    caloriesText: {
-        fontSize: 20,
-        fontWeight: '900',
-        color: '#fff',
-    },
-    caloriesLabel: {
+    label: {
         fontSize: 12,
-        color: '#aaa',
+        color: '#666',
         textTransform: 'uppercase',
+        fontWeight: 'bold',
+        marginBottom: 8,
     },
-    timestamp: {
-        fontSize: 14,
-        color: '#888',
-        marginBottom: 10,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: Colors.dark.gray,
-        marginVertical: 20,
-    },
-    macrosContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-    },
-    macroItem: {
-        alignItems: 'center',
-    },
-    macroValue: {
+    bandValue: {
         fontSize: 24,
         fontWeight: 'bold',
-        marginBottom: 4,
+        color: '#333',
+        marginBottom: 8,
     },
-    macroLabel: {
-        fontSize: 14,
-        color: '#888',
+    badge: {
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
     },
-    editButton: {
-        alignSelf: 'center',
-        padding: 10,
-    },
-    editText: {
-        color: Colors.dark.tint,
+    badgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold', textTransform: 'capitalize' },
+    conf_high: { backgroundColor: '#4CAF50' },
+    conf_medium: { backgroundColor: '#FFBB33' },
+    conf_low: { backgroundColor: '#ff4444' },
+
+    reasoning: {
         fontSize: 16,
-        fontWeight: '600',
+        color: '#333',
+        lineHeight: 22,
+        fontStyle: 'italic',
     },
-    actionBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 20,
-        paddingBottom: 40,
-        backgroundColor: Colors.dark.cardBackground,
-        borderTopWidth: 1,
-        borderTopColor: Colors.dark.gray,
+    flags: {
         flexDirection: 'row',
-        gap: 12,
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 12,
     },
-    actionButton: {
-        flex: 1,
-        borderRadius: 16,
-        paddingVertical: 18,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
+    flag: {
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+        fontSize: 12,
+        color: '#555',
+        borderWidth: 1,
+        borderColor: '#eee',
     },
-    cancelButton: {
-        backgroundColor: Colors.dark.danger,
-    },
-    saveButton: {
-        backgroundColor: Colors.dark.success, // Use Success Green for Save
-    },
-    actionButtonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginLeft: 4,
-    }
+
+    text: { fontSize: 18, marginBottom: 20, color: '#222' },
+    backButton: { padding: 10, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 8 },
+    backButtonText: { fontSize: 16, color: '#333' },
 });

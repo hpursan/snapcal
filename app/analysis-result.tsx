@@ -1,66 +1,43 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Colors } from '@/constants/Colors';
+import { analyzeFoodImage, AnalysisResult } from '@/services/FoodAnalysisService';
+import { MealService } from '@/services/MealService';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
-import { useMeals } from '@/context/MealContext';
-import { useState, useEffect } from 'react';
-import { GlowInput } from '@/components/GlowInput';
-import * as Haptics from 'expo-haptics';
+import { ENERGY_BAND_LABELS } from '@/types/Meal';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function AnalysisResultScreen() {
     const router = useRouter();
     const { imageUri } = useLocalSearchParams();
-    const { addMeal, remainingScans, decrementScanQuota } = useMeals();
+    const colorScheme = useColorScheme();
+    const isDark = colorScheme === 'dark';
 
-    const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [result, setResult] = useState<AnalysisResult | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Form Data
-    const [foodName, setFoodName] = useState("");
-    const [calories, setCalories] = useState("0");
-    const [protein, setProtein] = useState("0");
-    const [carbs, setCarbs] = useState("0");
-    const [fats, setFats] = useState("0");
-    const [description, setDescription] = useState("Analyzing your meal...");
-    const [insight, setInsight] = useState("");
+    // Simulation Mode: Date Picker
+    const [date, setDate] = useState(new Date());
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     useEffect(() => {
         if (!imageUri) return;
 
         const analyze = async () => {
-            // 1. Check Limits
-            if (remainingScans <= 0) {
-                setIsLoading(false);
-                setError("You have reached your daily limit of 5 scans.");
-                setDescription("Please come back tomorrow or upgrade to Pro.");
-                return;
-            }
-
             try {
-                setIsLoading(true);
-                setError(null);
-
-                // Dynamically import to avoid circular dependency issues if any
-                const { analyzeFoodImage } = await import('@/services/FoodAnalysisService');
+                // Analysis happens here
                 const data = await analyzeFoodImage(imageUri as string);
-
-                // 2. Decrement Quota & Haptic Success
-                decrementScanQuota();
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-                setFoodName(data.foodName);
-                setDescription(data.description);
-                setCalories(data.calories.toString());
-                setProtein(data.protein.toString());
-                setCarbs(data.carbs.toString());
-                setFats(data.fats.toString());
-                setInsight(data.insight);
-            } catch (err) {
-                console.error(err);
-                setError("Could not analyze image. Please try again.");
-                setDescription("Analysis failed. Please check your connection.");
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                setResult(data);
+            } catch (e: any) {
+                console.log("Analysis Error:", e);
+                // Check for Quota/Rate Limit
+                if (e.message?.includes('429') || e.message?.toLowerCase().includes('quota') || e.message?.toLowerCase().includes('rate limit')) {
+                    setError("QUOTA_EXCEEDED");
+                } else {
+                    setError("Could not analyze image. Check connection.");
+                }
             } finally {
                 setIsLoading(false);
             }
@@ -69,365 +46,236 @@ export default function AnalysisResultScreen() {
         analyze();
     }, [imageUri]);
 
-    const validateNumber = (text: string, setter: (val: string) => void) => {
-        if (/^\d*$/.test(text)) setter(text);
+    const handleSave = async () => {
+        if (!result || !imageUri) return;
+        try {
+            await MealService.saveMeal({
+                tempPhotoUri: imageUri as string,
+                mealType: result.mealType,
+                energyBand: result.energyBand,
+                confidence: result.confidence,
+                reasoning: result.reasoning,
+                flags: result.flags,
+                createdAt: date.toISOString() // Simulation Mode
+            });
+            // Go back to home
+            router.replace('/(tabs)');
+        } catch (e: any) {
+            console.log("Save Error:", e);
+            Alert.alert("Error", `Failed to save: ${e.message}`);
+        }
     };
 
-    const handleConfirm = () => {
-        addMeal({
-            name: foodName || "Unknown Meal",
-            calories: parseInt(calories) || 0,
-            protein: parseInt(protein) || 0,
-            carbs: parseInt(carbs) || 0,
-            fats: parseInt(fats) || 0,
-            imageUri: imageUri as string,
-        });
-        router.dismissTo('/(tabs)');
+    const handleDateChange = (event: any, selectedDate?: Date) => {
+        const currentDate = selectedDate || date;
+        setShowDatePicker(Platform.OS === 'ios'); // Keep open on iOS
+        setDate(currentDate);
     };
+
+    if (isLoading) {
+        return (
+            <View style={[styles.container, isDark && styles.darkContainer, styles.center]}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text style={[styles.loadingText, isDark && styles.darkText]}>Analyzing Meal Pattern...</Text>
+            </View>
+        );
+    }
+
+    if (error || !result) {
+        const isQuota = error === "QUOTA_EXCEEDED";
+
+        return (
+            <View style={[styles.container, isDark && styles.darkContainer, styles.center, { padding: 32 }]}>
+                <Ionicons
+                    name={isQuota ? "hourglass-outline" : "alert-circle-outline"}
+                    size={64}
+                    color={isQuota ? "#FFC107" : "#ff4444"}
+                    style={{ marginBottom: 16 }}
+                />
+
+                <Text style={[styles.errorTitle, isDark && styles.darkText]}>
+                    {isQuota ? "Whoa, Slow Down!" : "Analysis Failed"}
+                </Text>
+
+                <Text style={[styles.errorText, isDark && styles.darkText]}>
+                    {isQuota
+                        ? "We've hit our free AI request limit for the moment. Please wait a minute and try again."
+                        : (error || "Unknown Error")
+                    }
+                </Text>
+
+                <TouchableOpacity style={[styles.secondaryButton, { width: '100%', marginTop: 20, flex: 0 }]} onPress={() => router.back()}>
+                    <Text style={styles.secondaryButtonText}>Go Back</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={0}
-        >
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={[styles.container, isDark && styles.darkContainer]} contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Image Card Style */}
+            <View style={styles.imageCard}>
+                <Image source={{ uri: imageUri as string }} style={styles.image} />
+            </View>
 
-                {/* Image Preview */}
-                <View style={styles.imageContainer}>
-                    {imageUri ? (
-                        <Image source={{ uri: imageUri as string }} style={styles.image} />
-                    ) : (
-                        <View style={[styles.image, { backgroundColor: '#333' }]} />
-                    )}
-                    <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-                        <Ionicons name="close-circle" size={32} color="rgba(255,255,255,0.8)" />
-                    </TouchableOpacity>
-                </View>
+            <View style={styles.content}>
+                <Text style={styles.caption}>This looks like a <Text style={{ fontWeight: 'bold' }}>{result.energyBand.replace('_', ' ')} plate.</Text></Text>
 
-                {/* Loading State Overlay */}
-                {isLoading && (
-                    <View style={styles.loadingOverlay}>
-                        <Text style={styles.loadingText}>Analyzing meal...</Text>
-                        <Text style={styles.loadingSub}>Consulting the nutrition brain...</Text>
+                {/* Main Result Card */}
+                <View style={styles.resultCard}>
+                    <View style={styles.resultRow}>
+                        <Text style={styles.label}>Estimated as:</Text>
+                        <Text style={styles.value}>{ENERGY_BAND_LABELS[result.energyBand]}</Text>
                     </View>
-                )}
-
-                {/* Content Card */}
-                {!isLoading && (
-                    <View style={styles.card}>
-                        {/* Header Section */}
-                        {isEditing ? (
-                            <View style={styles.headerColumnEditing}>
-                                <Text style={styles.labelSmall}>Food Name</Text>
-                                <GlowInput
-                                    style={[styles.foodNameInput, { fontSize: 20, marginBottom: 10, width: '100%' }]}
-                                    value={foodName}
-                                    onChangeText={setFoodName}
-                                    autoFocus
-                                    glowColor={Colors.dark.tint}
-                                    multiline={true}
-                                />
-
-                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <Text style={styles.labelSmall}>Calories</Text>
-                                    <View style={styles.caloriesBadge}>
-                                        <GlowInput
-                                            style={[styles.caloriesText, { fontSize: 18, width: 80, textAlign: 'center' }]}
-                                            value={calories}
-                                            onChangeText={(text) => validateNumber(text, setCalories)}
-                                            keyboardType="numeric"
-                                            glowColor="#fff"
-                                        />
-                                        <Text style={styles.caloriesLabel}>kcal</Text>
-                                    </View>
-                                </View>
-                            </View>
-                        ) : (
-                            <View style={styles.headerRow}>
-                                <Text style={styles.foodName}>{foodName}</Text>
-                                <View style={styles.caloriesBadge}>
-                                    <Text style={styles.caloriesText}>{calories}</Text>
-                                    <Text style={styles.caloriesLabel}>kcal</Text>
-                                </View>
-                            </View>
-                        )}
-
-                        {/* AI Insight Section */}
-                        {insight ? (
-                            <View style={styles.insightContainer}>
-                                <Ionicons name="sparkles" size={16} color={Colors.dark.surplus} style={{ marginTop: 3 }} />
-                                <Text style={styles.insightText}>{insight}</Text>
-                            </View>
-                        ) : null}
-
-                        <Text style={styles.description}>{description}</Text>
-
-                        <View style={styles.divider} />
-
-                        {/* Macros */}
-                        <View style={styles.macrosContainer}>
-                            <MacroItem
-                                label="Protein"
-                                value={protein}
-                                onChange={(text) => validateNumber(text, setProtein)}
-                                isEditing={isEditing}
-                                color={Colors.dark.primary}
-                            />
-                            <MacroItem
-                                label="Carbs"
-                                value={carbs}
-                                onChange={(text) => validateNumber(text, setCarbs)}
-                                isEditing={isEditing}
-                                color={Colors.dark.success}
-                            />
-                            <MacroItem
-                                label="Fats"
-                                value={fats}
-                                onChange={(text) => validateNumber(text, setFats)}
-                                isEditing={isEditing}
-                                color={Colors.dark.accent}
-                            />
+                    <View style={styles.divider} />
+                    <View style={styles.resultRow}>
+                        <Text style={styles.label}>Confidence:</Text>
+                        <View style={[styles.badge, styles[`conf_${result.confidence}`]]}>
+                            <Text style={styles.badgeText}>{result.confidence}</Text>
                         </View>
-
-                        <View style={styles.divider} />
-
-                        <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(!isEditing)}>
-                            <Text style={styles.editText}>{isEditing ? "Done" : "Edit Details"}</Text>
-                        </TouchableOpacity>
-
-                        {/* Spacer for keyboard */}
-                        <View style={{ height: 250 }} />
-
                     </View>
-                )}
-            </ScrollView>
 
-            {/* Bottom Action Bar */}
-            {!isEditing && (
-                <View style={styles.actionBar}>
-                    <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={() => router.back()}>
-                        <Ionicons name="close" size={24} color="#fff" />
-                        <Text style={styles.actionButtonText}>Cancel</Text>
+                    <View style={styles.divider} />
+                    <View style={styles.insightBlock}>
+                        <Ionicons name="analytics-outline" size={16} color="#007AFF" style={{ marginTop: 2 }} />
+                        <Text style={styles.reasoning}>{result.reasoning}</Text>
+                    </View>
+                </View>
+
+                {/* Date Simulation */}
+                <View style={styles.dateSection}>
+                    <Text style={styles.dateLabel}>Date: {date.toLocaleDateString()}</Text>
+                    {showDatePicker && (
+                        <DateTimePicker
+                            testID="dateTimePicker"
+                            value={date}
+                            mode="date"
+                            display="spinner"
+                            onChange={handleDateChange}
+                            maximumDate={new Date()} // Can't eat in the future
+                        />
+                    )}
+
+                    {!showDatePicker && Platform.OS === 'android' && (
+                        <TouchableOpacity onPress={() => setShowDatePicker(true)}>
+                            <Text style={{ color: '#007AFF' }}>Change Date</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+
+                {/* Buttons */}
+                <View style={styles.buttonRow}>
+                    <TouchableOpacity
+                        style={styles.secondaryButton}
+                        onPress={() => setShowDatePicker(!showDatePicker)}
+                    >
+                        <Text style={styles.secondaryButtonText}>
+                            {showDatePicker ? "Done" : "Adjust Date"}
+                        </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.actionButton, styles.logButton]} onPress={handleConfirm}>
-                        <Text style={styles.actionButtonText}>Log Meal</Text>
-                        <Ionicons name="checkmark" size={24} color="#fff" style={{ marginLeft: 8 }} />
+                    <TouchableOpacity style={styles.primaryButton} onPress={handleSave}>
+                        <Text style={styles.primaryButtonText}>Add to Insights</Text>
                     </TouchableOpacity>
                 </View>
-            )}
-        </KeyboardAvoidingView>
+            </View>
+        </ScrollView>
     );
 }
 
-function MacroItem({ label, value, color, isEditing, onChange }: {
-    label: string,
-    value: string,
-    color: string,
-    isEditing: boolean,
-    onChange: (val: string) => void
-}) {
-    return (
-        <View style={styles.macroItem}>
-            {isEditing ? (
-                <GlowInput
-                    style={[styles.macroValue, { color }]}
-                    value={value}
-                    onChangeText={onChange}
-                    keyboardType="numeric"
-                    glowColor={color}
-                />
-            ) : (
-                <Text style={[styles.macroValue, { color }]}>{value}g</Text>
-            )}
-            <Text style={styles.macroLabel}>{label}</Text>
-        </View>
-    )
-}
-
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.dark.background,
+    container: { flex: 1, backgroundColor: '#f0f2f5' },
+    darkContainer: { backgroundColor: '#000' },
+    center: { justifyContent: 'center', alignItems: 'center' },
+    loadingText: { marginTop: 16, fontSize: 16, fontWeight: '500', color: '#666' },
+    errorTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 8 },
+    errorText: { marginTop: 8, fontSize: 16, color: '#ff4444', marginBottom: 20, textAlign: 'center', lineHeight: 22 },
+    darkText: { color: '#fff' },
+
+    imageCard: {
+        margin: 16,
+        borderRadius: 24,
+        overflow: 'hidden',
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        backgroundColor: '#fff',
     },
-    scrollContent: {
-        paddingBottom: 120,
+    image: { width: '100%', height: 320, resizeMode: 'cover' },
+
+    content: { paddingHorizontal: 24 },
+    caption: { fontSize: 18, color: '#444', textAlign: 'center', marginBottom: 24, fontStyle: 'italic' },
+
+    resultCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
     },
-    imageContainer: {
-        height: 300,
-        width: '100%',
-        position: 'relative',
-    },
-    image: {
-        width: '100%',
-        height: '100%',
-        resizeMode: 'cover',
-    },
-    closeButton: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        zIndex: 10,
-    },
-    card: {
-        backgroundColor: Colors.dark.cardBackground,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        marginTop: -24,
-        padding: 24,
-        minHeight: 500,
-    },
-    headerRow: {
+    resultRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 16,
-    },
-    headerColumnEditing: {
-        flexDirection: 'column',
-        marginBottom: 24,
-    },
-    labelSmall: {
-        fontSize: 12,
-        color: '#aaa',
-        textTransform: 'uppercase',
-        marginBottom: 4,
-        fontWeight: '600',
-    },
-    foodName: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: Colors.dark.text,
-        flex: 1,
-        marginRight: 10,
-    },
-    foodNameInput: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: Colors.dark.text,
-        flex: 1,
-        marginRight: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.dark.gray,
-    },
-    caloriesBadge: {
         alignItems: 'center',
-        backgroundColor: Colors.dark.gray,
         paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 12,
     },
-    caloriesText: {
-        fontSize: 20,
-        fontWeight: '900',
-        color: '#fff',
-    },
-    caloriesLabel: {
-        fontSize: 12,
-        color: '#aaa',
-        textTransform: 'uppercase',
-    },
-    description: {
-        fontSize: 16,
-        color: '#ccc',
-        lineHeight: 24,
-        marginBottom: 24,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: Colors.dark.gray,
-        marginVertical: 20,
-    },
-    macrosContainer: {
+    label: { fontSize: 16, color: '#666' },
+    value: { fontSize: 18, fontWeight: 'bold', color: '#1a1a1a' },
+    divider: { height: 1, backgroundColor: '#eee', marginVertical: 8 },
+
+    insightBlock: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
-    },
-    macroItem: {
-        alignItems: 'center',
-    },
-    macroValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginBottom: 4,
-    },
-    macroLabel: {
-        fontSize: 14,
-        color: '#888',
-    },
-    editButton: {
-        alignSelf: 'center',
-        padding: 10,
-    },
-    editText: {
-        color: Colors.dark.tint,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    actionBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 20,
-        paddingBottom: 40,
-        backgroundColor: Colors.dark.cardBackground,
-        borderTopWidth: 1,
-        borderTopColor: Colors.dark.gray,
-        flexDirection: 'row',
-        gap: 12,
-    },
-    actionButton: {
-        flex: 1,
-        borderRadius: 16,
-        paddingVertical: 18,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    cancelButton: {
-        backgroundColor: Colors.dark.danger,
-    },
-    logButton: {
-        backgroundColor: Colors.dark.primary, // Green
-    },
-    actionButtonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginLeft: 4,
-    },
-    loadingOverlay: {
-        padding: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 300,
-    },
-    loadingText: {
-        color: Colors.dark.text,
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginTop: 20,
-    },
-    loadingSub: {
-        color: Colors.dark.tabIconDefault,
-        marginTop: 10,
-    },
-    insightContainer: {
-        backgroundColor: 'rgba(255, 140, 0, 0.15)', // Low opacity amber/surplus
+        gap: 8,
+        backgroundColor: '#f8f9fa',
         padding: 12,
-        borderRadius: 12,
-        flexDirection: 'row',
-        gap: 10,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 140, 0, 0.3)',
+        borderRadius: 8,
+        marginTop: 8,
     },
-    insightText: {
-        color: Colors.dark.text,
-        fontSize: 14,
-        lineHeight: 20,
+    reasoning: { flex: 1, fontSize: 14, color: '#555', lineHeight: 20 },
+
+    badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+    badgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase' },
+    conf_high: { backgroundColor: '#4CAF50' },
+    conf_medium: { backgroundColor: '#FFC107' },
+    conf_low: { backgroundColor: '#FF5252' },
+
+    dateSection: { alignItems: 'center', marginBottom: 24 },
+    dateLabel: { fontSize: 14, color: '#888', marginBottom: 8 },
+
+    buttonRow: { flexDirection: 'row', gap: 16 },
+    primaryButton: {
         flex: 1,
-        fontStyle: 'italic',
+        backgroundColor: '#007AFF',
+        paddingVertical: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        shadowColor: '#007AFF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
     },
+    primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+    secondaryButton: {
+        flex: 1,
+        backgroundColor: '#fff',
+        paddingVertical: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#ddd',
+        // Uniform shadow for consistency
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+    },
+    secondaryButtonText: { color: '#333', fontSize: 16, fontWeight: '600' },
 });

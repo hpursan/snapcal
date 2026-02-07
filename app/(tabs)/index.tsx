@@ -1,253 +1,244 @@
-import { Image, StyleSheet, Platform, View, Text, Button, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Colors } from '@/constants/Colors';
-import { useMeals, Meal } from '@/context/MealContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { StyleSheet, ScrollView, RefreshControl, View, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+
+import { MealService } from '@/services/MealService';
+import { MealEntry } from '@/types/Meal';
+import { ThemedText } from '@/components/ThemedText';
+import { GlassBackground } from '@/components/GlassBackground';
+import { AnimatedGlassCard } from '@/components/AnimatedGlassCard';
+import { WeeklyEnergyTrend } from '@/components/WeeklyEnergyTrend';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function HomeScreen() {
-    const router = useRouter();
-    const { goals, todayStats, meals } = useMeals();
+    const [meals, setMeals] = useState<MealEntry[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
+    const { isDark } = useTheme();
 
-    const caloriesRemaining = goals.calories - todayStats.calories;
-    const isOverBudget = caloriesRemaining < 0;
-    const absCalories = Math.abs(caloriesRemaining);
+    const loadMeals = async () => {
+        const allMeals = await MealService.getAllMeals();
+        setMeals(allMeals);
+    };
 
-    const [expanded, setExpanded] = useState(false);
-    const displayedMeals = expanded ? meals : meals.slice(0, 3);
-
-    return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <View>
-                    <Text style={styles.greeting}>Hello,</Text>
-                    <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
-                </View>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {/* Main Progress Ring */}
-                <View style={styles.ringContainer}>
-                    <View style={[styles.ring, isOverBudget && { borderColor: Colors.dark.surplus }]}>
-                        <Text style={[styles.calories, isOverBudget && { color: Colors.dark.surplus }]}>
-                            {absCalories}
-                        </Text>
-                        <Text style={[styles.label, isOverBudget && { color: Colors.dark.surplus }]}>
-                            {isOverBudget ? 'surplus' : 'calories left'}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Macros */}
-                <View style={styles.statsContainer}>
-                    <MacroStat label="Protein" current={todayStats.protein} target={goals.protein} color={Colors.dark.primary} />
-                    <MacroStat label="Carbs" current={todayStats.carbs} target={goals.carbs} color={Colors.dark.success} />
-                    <MacroStat label="Fats" current={todayStats.fats} target={goals.fats} color={Colors.dark.accent} />
-                </View>
-
-                {/* Recent Meals */}
-                <Text style={styles.sectionTitle}>Today's Meals</Text>
-                {meals.length === 0 ? (
-                    <Text style={styles.emptyText}>No meals logged yet. Tap scan to start!</Text>
-                ) : (
-                    <>
-                        {displayedMeals.map((meal) => <MealItem key={meal.id} meal={meal} />)}
-
-                        {meals.length > 3 && (
-                            <TouchableOpacity
-                                onPress={() => setExpanded(!expanded)}
-                                style={{ alignSelf: 'center', padding: 10, marginTop: 5 }}
-                            >
-                                <Ionicons
-                                    name={expanded ? "chevron-up" : "chevron-down"}
-                                    size={24}
-                                    color={Colors.dark.gray}
-                                />
-                            </TouchableOpacity>
-                        )}
-                    </>
-                )}
-            </ScrollView>
-        </View>
+    useFocusEffect(
+        useCallback(() => {
+            loadMeals();
+        }, [])
     );
-}
 
-function MacroStat({ label, current, target, color }: { label: string, current: number, target: number, color: string }) {
-    const isOver = current > target;
-    const progress = Math.min(100, (current / target) * 100);
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadMeals();
+        setRefreshing(false);
+    };
 
-    return (
-        <View style={styles.macroRow}>
-            <View style={styles.macroHeader}>
-                <Text style={styles.macroLabel}>{label}</Text>
-                <Text style={[styles.macroValue, isOver && { color: Colors.dark.surplus }]}>
-                    {current} / {target}g {isOver && '(Surplus)'}
-                </Text>
-            </View>
-            <View style={styles.progressBarBackground}>
-                <View style={[
-                    styles.progressBarFill,
-                    { width: `${progress}%`, backgroundColor: isOver ? Colors.dark.surplus : color }
-                ]} />
-            </View>
-        </View>
-    )
-}
+    // Calculate insights
+    const todayMeals = meals.filter(m => {
+        const today = new Date();
+        const mealDate = new Date(m.createdAt);
+        return mealDate.toDateString() === today.toDateString();
+    });
 
-import { Alert } from 'react-native';
+    const thisWeekMeals = meals.filter(m => {
+        const now = new Date();
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const mealDate = new Date(m.createdAt);
+        return mealDate >= weekAgo;
+    });
 
-function MealItem({ meal }: { meal: Meal }) {
-    const { removeMeal } = useMeals();
-    const router = useRouter();
+    // Energy distribution
+    const lightCount = thisWeekMeals.filter(m => ['very_light', 'light'].includes(m.energyBand)).length;
+    const moderateCount = thisWeekMeals.filter(m => m.energyBand === 'moderate').length;
+    const heavyCount = thisWeekMeals.filter(m => ['heavy', 'very_heavy'].includes(m.energyBand)).length;
+    const total = lightCount + moderateCount + heavyCount;
 
-    const handleLongPress = () => {
-        Alert.alert(
-            "Delete Meal",
-            `Are you sure you want to remove ${meal.name}?`,
-            [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: () => removeMeal(meal.id) }
-            ]
-        );
+    // Dinner patterns insight
+    const getDinnerInsight = () => {
+        const dinners = thisWeekMeals.filter(m => {
+            const hour = new Date(m.createdAt).getHours();
+            return hour >= 17;
+        });
+        if (dinners.length < 3) return "Log more meals to compare dinner & lunch.";
+        const avgEnergy = dinners.reduce((sum, m) => {
+            const val = ['very_light', 'light'].includes(m.energyBand) ? 1 :
+                m.energyBand === 'moderate' ? 2 : 3;
+            return sum + val;
+        }, 0) / dinners.length;
+        return avgEnergy > 2 ? "Dinners tend to be heavier." : "Dinners are well-balanced.";
+    };
+
+    // Weekend vs weekday
+    const getWeekendInsight = () => {
+        const weekendMeals = thisWeekMeals.filter(m => {
+            const day = new Date(m.createdAt).getDay();
+            return day === 0 || day === 6;
+        });
+        const weekdayMeals = thisWeekMeals.filter(m => {
+            const day = new Date(m.createdAt).getDay();
+            return day > 0 && day < 6;
+        });
+        if (weekendMeals.length === 0 || weekdayMeals.length === 0) {
+            return "Weekend consumption matches your weekday habits.";
+        }
+        const weekendAvg = weekendMeals.length / 2;
+        const weekdayAvg = weekdayMeals.length / 5;
+        return weekendAvg > weekdayAvg * 1.2
+            ? "You eat more on weekends."
+            : "Weekend consumption matches your weekday habits.";
+    };
+
+    // Energy trend
+    const getEnergyTrend = () => {
+        if (thisWeekMeals.length < 5) return "Your energy intake is well balanced.";
+        const recentAvg = thisWeekMeals.slice(0, 3).reduce((sum, m) => {
+            const val = ['very_light', 'light'].includes(m.energyBand) ? 1 :
+                m.energyBand === 'moderate' ? 2 : 3;
+            return sum + val;
+        }, 0) / 3;
+        return recentAvg < 1.8 ? "Trending lighter lately." : "Your energy intake is well balanced.";
+    };
+
+    // Date range
+    const getDateRange = () => {
+        const now = new Date();
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+        return `${weekAgo.toLocaleDateString('en-US', options)} - ${now.toLocaleDateString('en-US', options)}`;
     };
 
     return (
-        <TouchableOpacity
-            style={styles.mealItem}
-            onLongPress={handleLongPress}
-            onPress={() => router.push(`/meal/${meal.id}`)}
-            activeOpacity={0.7}
-        >
-            <Image source={{ uri: meal.imageUri }} style={styles.mealImage} />
-            <View style={styles.mealInfo}>
-                <Text style={styles.mealName}>{meal.name}</Text>
-                <Text style={styles.mealCal}>{meal.calories} kcal</Text>
-            </View>
-            <Ionicons name="create-outline" size={20} color={Colors.dark.gray} />
-        </TouchableOpacity>
-    )
+        <GlassBackground>
+            <SafeAreaView style={{ flex: 1 }}>
+                <ScrollView
+                    style={styles.container}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    }
+                >
+                    <View style={styles.titleContainer}>
+                        <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>Weekly Insights</Text>
+                    </View>
+
+                    <View style={styles.dateRangeContainer}>
+                        <Text style={styles.dateRange}>{getDateRange()}</Text>
+                    </View>
+
+                    {/* Insight Cards Grid */}
+                    <View style={styles.gridContainer}>
+                        {/* 1. Dinner Patterns */}
+                        <AnimatedGlassCard intensity={50} delay={0} style={styles.cardLayout}>
+                            <Ionicons name="moon" size={24} color="#1565c0" style={{ marginBottom: 8 }} />
+                            <Text style={styles.cardTitle}>Dinner Patterns</Text>
+                            <Text style={styles.cardBody}>{getDinnerInsight()}</Text>
+                        </AnimatedGlassCard>
+
+                        {/* 2. Weekend Review */}
+                        <AnimatedGlassCard intensity={50} delay={100} style={styles.cardLayout}>
+                            <Ionicons name="calendar" size={24} color="#2e7d32" style={{ marginBottom: 8 }} />
+                            <Text style={styles.cardTitle}>Weekend Review</Text>
+                            <Text style={styles.cardBody}>{getWeekendInsight()}</Text>
+                        </AnimatedGlassCard>
+
+                        {/* 3. Energy Trend */}
+                        <AnimatedGlassCard intensity={50} delay={200} style={styles.cardLayout}>
+                            <Ionicons name="trending-up" size={24} color="#f57c00" style={{ marginBottom: 8 }} />
+                            <Text style={styles.cardTitle}>Energy Trend</Text>
+                            <Text style={styles.cardBody}>{getEnergyTrend()}</Text>
+                        </AnimatedGlassCard>
+
+                        {/* 4. Distribution */}
+                        <AnimatedGlassCard intensity={50} delay={300} style={styles.cardLayout}>
+                            <Ionicons name="pie-chart" size={24} color="#7b1fa2" style={{ marginBottom: 8 }} />
+                            <Text style={styles.cardTitle}>Distribution</Text>
+                            {total > 0 ? (
+                                <View>
+                                    <View style={styles.distributionBar}>
+                                        <View style={{ flex: lightCount, backgroundColor: '#4CAF50', height: 8, borderRadius: 4 }} />
+                                        <View style={{ flex: moderateCount, backgroundColor: '#FFC107', height: 8, borderRadius: 4 }} />
+                                        <View style={{ flex: heavyCount, backgroundColor: '#FF5252', height: 8, borderRadius: 4 }} />
+                                    </View>
+                                    <Text style={styles.distributionText}>
+                                        {lightCount} Light • {moderateCount} Moderate • {heavyCount} Heavy
+                                    </Text>
+                                </View>
+                            ) : (
+                                <Text style={styles.cardBody}>No meals logged yet.</Text>
+                            )}
+                        </AnimatedGlassCard>
+                    </View>
+
+                    {/* Weekly Energy Trend */}
+                    <View style={{ paddingHorizontal: 20, marginTop: 24, paddingBottom: 20 }}>
+                        <WeeklyEnergyTrend meals={meals} />
+                    </View>
+                </ScrollView>
+            </SafeAreaView>
+        </GlassBackground>
+    );
 }
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
-        backgroundColor: Colors.dark.background,
-        paddingTop: 60,
+        paddingTop: 16,
     },
-    header: {
+    titleContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+        paddingHorizontal: 20,
+    },
+    title: {
+        fontSize: 32,
+        fontWeight: 'bold',
+    },
+    dateRangeContainer: {
         paddingHorizontal: 20,
         marginBottom: 20,
-    },
-    greeting: {
-        fontSize: 16,
-        color: Colors.dark.tabIconDefault,
-    },
-    date: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: Colors.dark.text,
-    },
-    scrollContent: {
-        paddingHorizontal: 20,
-        paddingBottom: 40,
-    },
-    ringContainer: {
         alignItems: 'center',
-        marginVertical: 20,
     },
-    ring: {
-        width: 240,
-        height: 240,
-        borderRadius: 120,
-        borderWidth: 12,
-        borderColor: Colors.dark.gray, // Placeholder for progress ring
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: Colors.dark.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-    },
-    calories: {
-        color: Colors.dark.text,
-        fontSize: 56,
-        fontWeight: 'bold',
-    },
-    label: {
-        color: Colors.dark.tabIconDefault,
+    dateRange: {
         fontSize: 14,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        marginTop: -5,
+        color: '#666',
+        fontWeight: '500',
+        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 12,
     },
-    statsContainer: {
-        marginBottom: 30,
-        gap: 15,
-    },
-    macroRow: {
-        gap: 8,
-    },
-    macroHeader: {
+    gridContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        paddingHorizontal: 12,
+        gap: 12,
     },
-    macroLabel: {
-        color: Colors.dark.text,
-        fontWeight: '600',
+    cardLayout: {
+        width: '47%',
+        minHeight: 120,
     },
-    macroValue: {
-        color: Colors.dark.tabIconDefault,
+    cardTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#222',
+        marginBottom: 6,
+    },
+    cardBody: {
         fontSize: 12,
+        color: '#555',
+        lineHeight: 16,
     },
-    progressBarBackground: {
-        height: 8,
-        backgroundColor: Colors.dark.cardBackground,
-        borderRadius: 4,
-        overflow: 'hidden',
-    },
-    progressBarFill: {
-        height: '100%',
-        borderRadius: 4,
-    },
-    sectionTitle: {
-        color: Colors.dark.text,
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 15,
-    },
-    emptyText: {
-        color: Colors.dark.tabIconDefault,
-        textAlign: 'center',
-        marginTop: 20,
-    },
-    mealItem: {
+    distributionBar: {
         flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.dark.cardBackground,
-        padding: 12,
-        borderRadius: 16,
-        marginBottom: 10,
+        gap: 2,
+        marginBottom: 8,
     },
-    mealImage: {
-        width: 50,
-        height: 50,
-        borderRadius: 10,
-        marginRight: 15,
-        backgroundColor: '#333',
-    },
-    mealInfo: {
-        flex: 1,
-    },
-    mealName: {
-        color: Colors.dark.text,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    mealCal: {
-        color: Colors.dark.tabIconDefault,
-        fontSize: 14,
+    distributionText: {
+        fontSize: 10,
+        color: '#666',
+        lineHeight: 14,
     },
 });

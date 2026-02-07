@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "snapcal",
-    "slug": "snapcal",
+    "name": "Aperioesca",
+    "slug": "aperioesca",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "snapcal",
-    "userInterfaceStyle": "automatic",
+    "scheme": "aperioesca",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hpursan.snapcal"
+      "bundleIdentifier": "com.hpursan.aperioesca",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -47,13 +50,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SnapCal to access your camera to scan meals."
+          "cameraPermission": "Allow Aperioesca to access your camera to scan meals."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e98d67e7-937c-4f0c-9585-ebba2a053b73"
+      }
     }
   }
 }

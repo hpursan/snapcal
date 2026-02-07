@@ -1,10 +1,10 @@
 /**
- * SnapCal Color Palette
- * minimalist, dark mode, premium aesthetic
+ * Aperioesca Color Palette
+ * Pink-cyan gradient, glassmorphism, calm aesthetic
  */
 
-const tintColorLight = '#2f95dc';
-const tintColorDark = '#4D96FF'; // Neon Blue
+const tintColorLight = '#FF6B9D'; // Pink
+const tintColorDark = '#6FEDD6'; // Cyan
 
 export const Colors = {
   light: {
@@ -16,20 +16,28 @@ export const Colors = {
   },
   dark: {
     text: '#ECEDEE',
-    background: '#121212', // Deep matte charcoal/black
+    background: '#1A1A2E', // Deep purple-navy (matches logo)
     tint: tintColorDark,
     tabIconDefault: '#687076',
     tabIconSelected: tintColorDark,
 
-    // Custom App Colors
+    // Aperioesca Brand Colors
     cardBackground: '#1E1E1E',
-    primary: '#4D96FF', // Blue - Protein/Action
-    secondary: '#76E4F7', // Cyan - Progress
-    accent: '#A469FF', // Purple - Fat/Vibe
-    success: '#6BCB77', // Green - Carbs/Success
-    warning: '#FFD93D', // Yellow/Orange
-    danger: '#FF6B6B', // Red
-    surplus: '#FF8C00', // Dark Orange - Surplus Energy
+
+    // Primary Gradient (Pink to Cyan)
+    primary: '#FF6B9D', // Pink - Energy/Action
+    secondary: '#6FEDD6', // Cyan - Calm/Awareness
+
+    // Energy Bands
+    energyLight: '#6FEDD6', // Cyan - Light meals
+    energyModerate: '#A78BFA', // Purple - Moderate meals
+    energyHeavy: '#FF6B9D', // Pink - Heavy meals
+
+    // Semantic Colors
+    success: '#10B981', // Green
+    warning: '#F59E0B', // Amber
+    danger: '#EF4444', // Red
+    info: '#3B82F6', // Blue
 
     gray: '#2C2C2C',
     grayLight: '#3A3A3A',

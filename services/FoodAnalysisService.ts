@@ -1,27 +1,30 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import * as FileSystem from 'expo-file-system';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './Supabase';
+import { EnergyBand, ConfidenceLevel } from '../types/Meal';
 
 // Initialize Gemini
-// Note: In production, you should use a proxy server or Firebase Functions to hide this key.
-// For this MVP/Demo, we use the public env var.
-const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
-const USE_PROXY = !!process.env.EXPO_PUBLIC_SUPABASE_URL;
+// Production: Uses Supabase Edge Function proxy (two-tier model approach)
+// The proxy handles: rate limiting, cost optimization, and API key security
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || ""; // Only used as fallback in dev
+const USE_PROXY = true; // Always use proxy in production
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-export interface FoodAnalysis {
-    foodName: string;
-    description: string;
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-    insight: string; // The "Un-Stupid" context
+export interface AnalysisResult {
+    mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    energyBand: EnergyBand;
+    confidence: ConfidenceLevel;
+    reasoning: string;
+    flags: {
+        mixedPlate: boolean;
+        unclearPortions: boolean;
+        sharedDish: boolean;
+    };
+    insight: string; // "Heavier than typical lunch" etc.
 }
 
-export async function analyzeFoodImage(uri: string): Promise<FoodAnalysis> {
+export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
     try {
         // 1. Resize image to minimize payload
         const manipResult = await manipulateAsync(
@@ -34,20 +37,55 @@ export async function analyzeFoodImage(uri: string): Promise<FoodAnalysis> {
         const base64 = manipResult.base64;
         if (!base64) throw new Error("Could not process image");
 
+        // PROMPT DESIGN (APERIOESCA)
+        // Focus: Energy density, not precise numbers.
+        // Confidence: Critical for trust.
+        const promptText = `
+        Analyze this food image for a "Meal Insights" app (Aperioesca). 
+        
+        GOAL: Classify the "Energy Density" relative to a standard adult meal.
+        CRITICAL INSTRUCTION: Be decisive. Do NOT default to "moderate". 
+        - If it has obvious carbs, fats, or large portions -> HEAVY.
+        - If it is mostly veg/lean protein -> LIGHT.
+        - Only use MODERATE if it's a truly balanced, standard portion.
+        
+        Return STRICT JSON:
+        {
+            "mealType": "breakfast" | "lunch" | "dinner" | "snack",
+            "energyBand": "very_light" (<300kcal) | "light" (300-500) | "moderate" (500-800) | "heavy" (800-1200) | "very_heavy" (>1200),
+            "confidence": "high" (clear items) | "medium" (hidden ingredients) | "low" (cluttered/blurry),
+            "reasoning": "Short (1 sentence) explanation. Focus on 'Why'. E.g. 'Fried dough and sugar glaze make this very energy dense.'",
+            "flags": {
+                "mixedPlate": boolean,
+                "unclearPortions": boolean,
+                "sharedDish": boolean
+            },
+            "insight": "One interesting observation about the macro balance. E.g. 'High sugar punch for breakfast.'"
+        }
+        `;
+
         // STRATEGY: Use Proxy if available, fallback to Direct API (Dev Mode)
         if (USE_PROXY) {
-            console.log("Analyzing via Supabase Proxy...");
+            console.log("Analyzing via Supabase Proxy (Two-Tier Aperioesca Mode)...");
             const { data, error } = await supabase.functions.invoke('analyze-food', {
                 body: { imageBase64: base64 }
             });
 
             if (error) {
                 console.error("Proxy Error:", error);
-                // Fallback to direct API if proxy fails, or rethrow if strict proxy usage is desired
-                console.log("Falling back to direct Gemini API...");
-            } else if (data) {
-                return data as FoodAnalysis;
+
+                // Handle specific error cases
+                if (error.message?.includes('Rate limit')) {
+                    throw new Error("Daily analysis limit reached. Try again tomorrow!");
+                }
+                if (error.message?.includes('Not food')) {
+                    throw new Error("This doesn't appear to be food. Please take a photo of your meal.");
+                }
+
+                throw new Error("Analysis service unavailable. Please try again.");
             }
+
+            return data as AnalysisResult;
         }
 
         // FAILSAFE: Direct API (Only if Proxy is not configured or failed)
@@ -55,17 +93,10 @@ export async function analyzeFoodImage(uri: string): Promise<FoodAnalysis> {
             throw new Error("Missing Gemini API Key. Please set EXPO_PUBLIC_GEMINI_API_KEY.");
         }
         console.log("Analyzing via Direct Gemini API...");
-        // prompt
-        // Using 'gemini-flash-lite-latest' for speed and cost efficiency.
+
         const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
-
-        const prompt = `
-        Analyze this food image. Identify the meal and estimate nutritional content. 
-        Return strictly valid JSON: { "foodName": string, "description": string, "calories": number, "protein": number, "carbs": number, "fats": number, "insight": string }.
-        `;
-
         const result = await model.generateContent([
-            prompt,
+            promptText,
             { inlineData: { data: base64, mimeType: "image/jpeg" } }
         ]);
 
@@ -76,11 +107,11 @@ export async function analyzeFoodImage(uri: string): Promise<FoodAnalysis> {
         // sometimes Gemini wraps in ```json ... ```
         const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-        const data = JSON.parse(cleanText) as FoodAnalysis;
+        const data = JSON.parse(cleanText) as AnalysisResult;
         return data;
 
     } catch (error) {
-        console.error("Gemini Analysis Failed:", error);
+        console.log("Gemini Analysis Failed:", error);
         throw error;
     }
 }

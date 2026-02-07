@@ -1,6 +1,6 @@
-# SnapCal Production Roadmap (iOS)
+# Aperioesca Production Roadmap (iOS)
 
-This roadmap outlines the steps to take SnapCal from development to a production-ready, privacy-focused iOS application.
+This roadmap outlines the steps to take Aperioesca from development to a production-ready, privacy-focused iOS application.
 
 ## 1. Secure AI Infrastructure (Critical)
 Currently, the app uses an API Key embedded in the code. This is **unsafe** for production.
@@ -20,7 +20,7 @@ To prevent unlimited Gemini API usage:
 - [x] **Anonymous User ID:** Generate a random UUID on first install to track usage quota on the backend (prevents simple uninstall/reinstall abuse).
 
 ## 3. Privacy Assurance (The Edge)
-SnapCal's selling point is privacy.
+Aperioesca's selling point is privacy.
 - [ ] **Local Storage Verification:** `MealContext` already uses `AsyncStorage`. Confirm no data is sent to cloud unless analyzing.
 - [ ] **Ephemeral Analysis:** Explicitly state in Privacy Policy that images sent for analysis are processed in-memory and typically deleted immediately by the provider (Gemini Data Privacy).
 - [ ] **Offline Mode:** Ensure the app works perfectly (viewing history, stats) without internet.
