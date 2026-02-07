@@ -121,10 +121,12 @@ export default function ProfileScreen() {
                     </BlurView>
 
                     <TouchableOpacity style={styles.button} onPress={handleReset}>
+                        <Ionicons name="trash-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
                         <Text style={styles.buttonText}>Clear Local Data</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.button, { backgroundColor: '#A18CD1', marginTop: 12 }]} onPress={handleResetOnboarding}>
+                    <TouchableOpacity style={[styles.button, styles.debugButton]} onPress={handleResetOnboarding}>
+                        <Ionicons name="refresh-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
                         <Text style={styles.buttonText}>Reset Onboarding (Debug)</Text>
                     </TouchableOpacity>
                 </View>
@@ -183,12 +185,16 @@ const styles = StyleSheet.create({
         marginVertical: 16,
     },
     button: {
-        backgroundColor: 'rgba(255, 82, 82, 0.1)',
-        borderWidth: 1,
-        borderColor: '#ff5252',
+        backgroundColor: '#ff5252',
         padding: 18,
         borderRadius: 16,
         alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'center',
+    },
+    debugButton: {
+        backgroundColor: '#A18CD1',
+        marginTop: 12,
     },
     linkRow: {
         flexDirection: 'row',
@@ -196,7 +202,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     buttonText: {
-        color: '#ff5252',
+        color: '#fff',
         fontSize: 18,
         fontWeight: '600',
     }
