@@ -104,7 +104,7 @@ export default function ProfileScreen() {
                         <TouchableOpacity style={styles.linkRow} onPress={handleOpenPrivacyPolicy}>
                             <View style={styles.row}>
                                 <Ionicons name="document-text-outline" size={24} color="#6FEDD6" />
-                                <Text style={[styles.label, { color: '#6FEDD6' }]}>Privacy Policy</Text>
+                                <Text style={[styles.label, { color: '#00BFA5' }]}>Privacy Policy</Text>
                             </View>
                             <Ionicons name="open-outline" size={20} color="#6FEDD6" />
                         </TouchableOpacity>
@@ -114,7 +114,7 @@ export default function ProfileScreen() {
                         <TouchableOpacity style={styles.linkRow} onPress={handleOpenTerms}>
                             <View style={styles.row}>
                                 <Ionicons name="document-text-outline" size={24} color="#6FEDD6" />
-                                <Text style={[styles.label, { color: '#6FEDD6' }]}>Terms of Service</Text>
+                                <Text style={[styles.label, { color: '#00BFA5' }]}>Terms of Service</Text>
                             </View>
                             <Ionicons name="open-outline" size={20} color="#6FEDD6" />
                         </TouchableOpacity>

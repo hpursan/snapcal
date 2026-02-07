@@ -102,7 +102,7 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
         }
         console.log("Analyzing via Direct Gemini API...");
 
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" });
         const result = await model.generateContent([
             promptText,
             { inlineData: { data: base64, mimeType: "image/jpeg" } }
