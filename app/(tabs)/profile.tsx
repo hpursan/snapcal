@@ -113,10 +113,10 @@ export default function ProfileScreen() {
 
                         <TouchableOpacity style={styles.linkRow} onPress={handleOpenTerms}>
                             <View style={styles.row}>
-                                <Ionicons name="document-text-outline" size={24} color="#FF6B9D" />
-                                <Text style={[styles.label, { color: '#FF6B9D' }]}>Terms of Service</Text>
+                                <Ionicons name="document-text-outline" size={24} color="#6FEDD6" />
+                                <Text style={[styles.label, { color: '#6FEDD6' }]}>Terms of Service</Text>
                             </View>
-                            <Ionicons name="open-outline" size={20} color="#FF6B9D" />
+                            <Ionicons name="open-outline" size={20} color="#6FEDD6" />
                         </TouchableOpacity>
                     </BlurView>
 

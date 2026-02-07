@@ -67,25 +67,33 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
         // STRATEGY: Use Proxy if available, fallback to Direct API (Dev Mode)
         if (USE_PROXY) {
             console.log("Analyzing via Supabase Proxy (Two-Tier Aperioesca Mode)...");
-            const { data, error } = await supabase.functions.invoke('analyze-food', {
-                body: { imageBase64: base64 }
-            });
 
-            if (error) {
-                console.error("Proxy Error:", error);
+            // Check if Supabase is configured
+            if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+                console.error("Supabase not configured, falling back to direct API");
+                // Fall through to direct API
+            } else {
+                const { data, error } = await supabase.functions.invoke('analyze-food', {
+                    body: { imageBase64: base64 }
+                });
 
-                // Handle specific error cases
-                if (error.message?.includes('Rate limit')) {
-                    throw new Error("Daily analysis limit reached. Try again tomorrow!");
+                if (error) {
+                    console.error("Proxy Error:", error);
+
+                    // Handle specific error cases
+                    if (error.message?.includes('Rate limit')) {
+                        throw new Error("Daily analysis limit reached. Try again tomorrow!");
+                    }
+                    if (error.message?.includes('Not food')) {
+                        throw new Error("This doesn't appear to be food. Please take a photo of your meal.");
+                    }
+
+                    // If proxy fails, fall through to direct API
+                    console.log("Proxy failed, attempting direct API...");
+                } else {
+                    return data as AnalysisResult;
                 }
-                if (error.message?.includes('Not food')) {
-                    throw new Error("This doesn't appear to be food. Please take a photo of your meal.");
-                }
-
-                throw new Error("Analysis service unavailable. Please try again.");
             }
-
-            return data as AnalysisResult;
         }
 
         // FAILSAFE: Direct API (Only if Proxy is not configured or failed)
