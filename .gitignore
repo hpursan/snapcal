@@ -43,3 +43,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# deployment docs
+docs/DEPLOYMENT_GUIDE.md
