@@ -58,6 +58,8 @@ export default function AnalysisResultScreen() {
                 setError("Image is too large. Please use a smaller image.");
             } else if (e.message?.toLowerCase().includes('duplicate')) {
                 setError("You already analyzed this image recently. Try a different photo.");
+            } else if (e.message?.toLowerCase().includes('food') || e.message?.toLowerCase().includes('recognize') || e.message?.toLowerCase().includes('could not find')) {
+                setError("We couldn't recognize any food in this photo. Please try a clearer shot of your meal.");
             } else if (e.message?.toLowerCase().includes('readasstringasync') || e.message?.toLowerCase().includes('filesystem')) {
                 setError("System error accessing image. We are working on a fix.");
             } else {

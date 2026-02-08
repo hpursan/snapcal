@@ -106,9 +106,11 @@ serve(async (req) => {
         }
 
         // 4. Validate base64 format (SECURITY: Input sanitization)
-        if (!/^[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+        // Loosened to allow whitespace which some encoders might include
+        if (!/^[A-Za-z0-9+/=\s]+$/.test(imageBase64)) {
             return new Response(JSON.stringify({
-                error: 'Invalid image format'
+                error: 'Invalid image format',
+                message: 'The photo format is not supported. Please try again.'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,
@@ -182,8 +184,8 @@ serve(async (req) => {
         // 8. TIER 1: Quick food detection (cheap model)
         console.log('Tier 1: Running food detection...');
 
-        // Model fallback chain (production-stable approach)
-        const tier1Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+        // Model fallback chain (current valid models)
+        const tier1Models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
         const tier1Prompt = `Is this image a photo of food or a meal? 
         Respond with ONLY a JSON object: {"isFood": true/false, "confidence": "high"/"medium"/"low"}
@@ -243,18 +245,26 @@ serve(async (req) => {
             throw new Error(lastError || "All Tier 1 models failed");
         }
 
-        const tier1Text = tier1Data.candidates[0].content.parts[0].text;
+        let tier1Text = tier1Data.candidates[0].content.parts[0].text;
+        // Clean markdown code blocks if present (LLMs sometimes add them even when told not to)
+        tier1Text = tier1Text.replace(/```json/g, '').replace(/```/g, '').trim();
         const tier1Result = JSON.parse(tier1Text);
 
-        // Log Tier 1 result with security metadata
-        await supabaseClient.from('analysis_requests').insert({
+        // Log Tier 1 result with security metadata (Use select().single() to get ID for update)
+        const { data: requestRecord, error: insertError } = await supabaseClient.from('analysis_requests').insert({
             user_id: userId,
             device_id: deviceId,
             ip_address: clientIp,
             image_hash: imageHash,
             tier_1_result: tier1Result.isFood ? 'food' : 'not_food',
             tier_2_success: null
-        });
+        }).select('id').single();
+
+        if (insertError) {
+            console.error('Record insertion error:', insertError);
+        }
+
+        const requestId = requestRecord?.id;
 
         // If not food, reject early
         if (!tier1Result.isFood) {
@@ -271,7 +281,7 @@ serve(async (req) => {
         // 9. TIER 2: Detailed analysis (smart model)
         console.log('Tier 2: Running detailed analysis...');
 
-        const tier2Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+        const tier2Models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
         const tier2Prompt = `
         Analyze this food image for a "Meal Insights" app (Aperioesca). 
@@ -343,32 +353,28 @@ serve(async (req) => {
         }
 
         if (!tier2Response?.ok) {
-            // Log failure
-            await supabaseClient.from('analysis_requests').insert({
-                user_id: userId,
-                device_id: deviceId,
-                ip_address: clientIp,
-                image_hash: imageHash,
-                tier_1_result: 'food',
-                tier_2_success: false,
-                error_message: lastTier2Error || 'All Tier 2 models failed'
-            });
+            // Log failure (Update existing record if possible)
+            if (requestId) {
+                await supabaseClient.from('analysis_requests').update({
+                    tier_2_success: false,
+                    error_message: lastTier2Error || 'All Tier 2 models failed'
+                }).eq('id', requestId);
+            }
 
             throw new Error(lastTier2Error || "All Tier 2 models failed");
         }
 
-        const tier2Text = tier2Data.candidates[0].content.parts[0].text;
+        let tier2Text = tier2Data.candidates[0].content.parts[0].text;
+        // Clean markdown
+        tier2Text = tier2Text.replace(/```json/g, '').replace(/```/g, '').trim();
         const tier2Result = JSON.parse(tier2Text);
 
-        // Log success
-        await supabaseClient.from('analysis_requests').insert({
-            user_id: userId,
-            device_id: deviceId,
-            ip_address: clientIp,
-            image_hash: imageHash,
-            tier_1_result: 'food',
-            tier_2_success: true
-        });
+        // Log success (Update existing record)
+        if (requestId) {
+            await supabaseClient.from('analysis_requests').update({
+                tier_2_success: true
+            }).eq('id', requestId);
+        }
 
         // 10. Return detailed analysis
         return new Response(JSON.stringify(tier2Result), {
