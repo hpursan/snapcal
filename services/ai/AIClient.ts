@@ -6,14 +6,20 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AnalysisResult } from './types';
 
-const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
-
 export class AIClient {
     private genAI: GoogleGenerativeAI;
     private model: any;
 
     constructor() {
+        // Access env var at runtime, not module load time
+        const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+
         if (!API_KEY) {
+            console.error("Environment variables:", {
+                hasGeminiKey: !!process.env.EXPO_PUBLIC_GEMINI_API_KEY,
+                hasSupabaseUrl: !!process.env.EXPO_PUBLIC_SUPABASE_URL,
+                hasSupabaseKey: !!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+            });
             throw new Error("Missing EXPO_PUBLIC_GEMINI_API_KEY");
         }
         this.genAI = new GoogleGenerativeAI(API_KEY);
@@ -67,6 +73,6 @@ export class AIClient {
      * Check if API is configured
      */
     static isConfigured(): boolean {
-        return !!API_KEY;
+        return !!process.env.EXPO_PUBLIC_GEMINI_API_KEY;
     }
 }

@@ -31,9 +31,17 @@ export default function AnalysisResultScreen() {
                 const data = await analyzeFoodImage(imageUri as string);
                 setResult(data);
             } catch (e: any) {
-                console.log("Analysis Error:", e);
-                // Check for Quota/Rate Limit
-                if (e.message?.includes('429') || e.message?.toLowerCase().includes('quota') || e.message?.toLowerCase().includes('rate limit')) {
+                console.error("Analysis Error Details:", {
+                    message: e.message,
+                    type: e.type,
+                    name: e.name,
+                    stack: e.stack
+                });
+
+                // Use the actual error message from AIError
+                if (e.message) {
+                    setError(e.message);
+                } else if (e.message?.includes('429') || e.message?.toLowerCase().includes('quota') || e.message?.toLowerCase().includes('rate limit')) {
                     setError("QUOTA_EXCEEDED");
                 } else {
                     setError("Could not analyze image. Check connection.");
