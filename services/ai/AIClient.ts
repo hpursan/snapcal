@@ -23,7 +23,8 @@ export class AIClient {
             throw new Error("Missing EXPO_PUBLIC_GEMINI_API_KEY");
         }
         this.genAI = new GoogleGenerativeAI(API_KEY);
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" });
+        // Use gemini-pro which is the stable model name
+        this.model = this.genAI.getGenerativeModel({ model: "gemini-pro" });
     }
 
     /**
