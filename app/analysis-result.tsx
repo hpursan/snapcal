@@ -8,6 +8,7 @@ import * as Network from 'expo-network';
 import { Ionicons } from '@expo/vector-icons';
 import { ENERGY_BAND_LABELS } from '@/types/Meal';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { supabase, signInAnonymously } from '@/services/Supabase';
 
 export default function AnalysisResultScreen() {
     const router = useRouter();
@@ -34,6 +35,21 @@ export default function AnalysisResultScreen() {
             if (!networkState.isConnected) {
                 throw new Error("No internet connection detected. Please check your settings.");
             }
+
+            // Ensure we have a session
+            let { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                console.log("No session found in AnalysisResult, attempting re-auth...");
+                const user = await signInAnonymously();
+                if (!user) {
+                    throw new Error("Authentication failed. Please try again later.");
+                }
+                // Refresh session after re-auth
+                const { data: { session: newSession } } = await supabase.auth.getSession();
+                session = newSession;
+            }
+
+            console.log("Session verified for analysis:", !!session);
 
             const data = await analyzeFoodImage(imageUri as string);
             setResult(data);

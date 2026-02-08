@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import { OnboardingService } from '@/services/OnboardingService';
 import { ThemeProvider as CustomThemeProvider } from '@/context/ThemeContext';
+import { signInAnonymously } from '@/services/Supabase';
 
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -22,6 +23,7 @@ export default function RootLayout() {
         // SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     });
     const [onboardingChecked, setOnboardingChecked] = useState(false);
+    const [authChecked, setAuthChecked] = useState(false);
 
     // Check onboarding status and redirect
     useEffect(() => {
@@ -46,11 +48,20 @@ export default function RootLayout() {
         checkOnboarding();
     }, [loaded, navigationState?.key, segments]);
 
+    // Initialize Authentication
     useEffect(() => {
-        if (loaded && onboardingChecked) {
+        const initAuth = async () => {
+            await signInAnonymously();
+            setAuthChecked(true);
+        };
+        initAuth();
+    }, []);
+
+    useEffect(() => {
+        if (loaded && onboardingChecked && authChecked) {
             SplashScreen.hideAsync();
         }
-    }, [loaded, onboardingChecked]);
+    }, [loaded, onboardingChecked, authChecked]);
 
     if (!loaded) {
         return null;

@@ -57,13 +57,17 @@ serve(async (req) => {
 
     try {
         // 1. Authenticate user
+        const authHeader = req.headers.get('Authorization');
+        console.log('Auth check: Authorization header present?', !!authHeader);
+
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+            { global: { headers: { Authorization: authHeader! } } }
         )
 
-        const { data: { user } } = await supabaseClient.auth.getUser()
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+        console.log('Auth check: User found?', !!user, 'Error?', authError?.message);
 
         if (!user) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -229,11 +233,11 @@ serve(async (req) => {
                 tier1Data = await tier1Response.json();
 
                 if (tier1Response.ok) {
-                    console.log(`Success with model: ${model}`);
+                    console.log(`Success with Tier 1 model: ${model}`);
                     break; // Success! Exit loop
                 } else {
                     lastError = tier1Data.error?.message || "API Error";
-                    console.log(`Model ${model} failed: ${lastError}`);
+                    console.log(`Tier 1 model ${model} failed: ${lastError}`, JSON.stringify(tier1Data.error));
                 }
             } catch (error: any) {
                 lastError = error.message;
