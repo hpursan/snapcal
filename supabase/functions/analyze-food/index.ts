@@ -78,7 +78,11 @@ serve(async (req) => {
 
         // 4. TIER 1: Quick food detection (cheap model)
         console.log('Tier 1: Running food detection...');
-        const tier1Model = 'gemini-2.0-flash-lite';
+
+        // Model fallback chain (production-stable approach)
+        // Try models in order until one works
+        const tier1Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+
         const tier1Prompt = `Is this image a photo of food or a meal? 
         Respond with ONLY a JSON object: {"isFood": true/false, "confidence": "high"/"medium"/"low"}
         
@@ -87,6 +91,7 @@ serve(async (req) => {
         - Blurry sandwich → {"isFood": true, "confidence": "medium"}
         - Photo of a car → {"isFood": false, "confidence": "high"}
         - Random screenshot → {"isFood": false, "confidence": "high"}`;
+
 
         const tier1Payload = {
             contents: [{
@@ -98,23 +103,45 @@ serve(async (req) => {
             generationConfig: { response_mime_type: "application/json" }
         };
 
-        const tier1Response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${tier1Model}:generateContent?key=${API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(tier1Payload)
+        // Try models in fallback chain
+        let tier1Data;
+        let tier1Response;
+        let lastError;
+
+        for (const model of tier1Models) {
+            try {
+                console.log(`Trying model: ${model}`);
+                tier1Response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tier1Payload)
+                    }
+                );
+
+                tier1Data = await tier1Response.json();
+
+                if (tier1Response.ok) {
+                    console.log(`Success with model: ${model}`);
+                    break; // Success! Exit loop
+                } else {
+                    lastError = tier1Data.error?.message || "API Error";
+                    console.log(`Model ${model} failed: ${lastError}`);
+                }
+            } catch (error) {
+                lastError = error.message;
+                console.log(`Model ${model} error: ${lastError}`);
             }
-        );
+        }
 
-        const tier1Data = await tier1Response.json();
-
-        if (!tier1Response.ok) {
-            throw new Error(tier1Data.error?.message || "Tier 1 API Error");
+        if (!tier1Response?.ok) {
+            throw new Error(lastError || "All Tier 1 models failed");
         }
 
         const tier1Text = tier1Data.candidates[0].content.parts[0].text;
         const tier1Result = JSON.parse(tier1Text);
+
 
         // Log Tier 1 result
         await supabaseClient.from('analysis_requests').insert({
@@ -137,7 +164,10 @@ serve(async (req) => {
 
         // 5. TIER 2: Detailed analysis (smart model)
         console.log('Tier 2: Running detailed analysis...');
-        const tier2Model = 'gemini-flash-lite-latest';
+
+        // Model fallback chain for detailed analysis
+        const tier2Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+
         const tier2Prompt = `
         Analyze this food image for a "Meal Insights" app (Aperioesca). 
         
@@ -162,6 +192,7 @@ serve(async (req) => {
         }
         `;
 
+
         const tier2Payload = {
             contents: [{
                 parts: [
@@ -172,27 +203,48 @@ serve(async (req) => {
             generationConfig: { response_mime_type: "application/json" }
         };
 
-        const tier2Response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${tier2Model}:generateContent?key=${API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(tier2Payload)
+        // Try models in fallback chain
+        let tier2Data;
+        let tier2Response;
+        let lastTier2Error;
+
+        for (const model of tier2Models) {
+            try {
+                console.log(`Trying Tier 2 model: ${model}`);
+                tier2Response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tier2Payload)
+                    }
+                );
+
+                tier2Data = await tier2Response.json();
+
+                if (tier2Response.ok) {
+                    console.log(`Success with Tier 2 model: ${model}`);
+                    break; // Success! Exit loop
+                } else {
+                    lastTier2Error = tier2Data.error?.message || "API Error";
+                    console.log(`Tier 2 model ${model} failed: ${lastTier2Error}`);
+                }
+            } catch (error) {
+                lastTier2Error = error.message;
+                console.log(`Tier 2 model ${model} error: ${lastTier2Error}`);
             }
-        );
+        }
 
-        const tier2Data = await tier2Response.json();
-
-        if (!tier2Response.ok) {
+        if (!tier2Response?.ok) {
             // Log failure
             await supabaseClient.from('analysis_requests').insert({
                 user_id: userId,
                 tier_1_result: 'food',
                 tier_2_success: false,
-                error_message: tier2Data.error?.message || 'Unknown error'
+                error_message: lastTier2Error || 'All Tier 2 models failed'
             });
 
-            throw new Error(tier2Data.error?.message || "Tier 2 API Error");
+            throw new Error(lastTier2Error || "All Tier 2 models failed");
         }
 
         const tier2Text = tier2Data.candidates[0].content.parts[0].text;

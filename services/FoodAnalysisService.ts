@@ -1,33 +1,63 @@
 /**
  * Food Analysis Service
- * Wrapper around production-ready AI service for backward compatibility
+ * Uses Supabase Edge Function for production stability
+ * This allows updating AI models server-side without app deployment
  */
 
-import { AIService } from './ai/AIService';
-import { AnalysisResult, AIError } from './ai/types';
+import { supabase } from './supabase';
+import { AnalysisResult } from './ai/types';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 export type { AnalysisResult };
 
 /**
- * Analyze food image
- * @deprecated Use AIService.getInstance().analyzeFoodImage() directly for more control
+ * Analyze food image via Supabase Edge Function
+ * This is the production-stable approach - model changes happen server-side
  */
 export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
-    const aiService = AIService.getInstance();
-    await aiService.initialize();
-    return await aiService.analyzeFoodImage(uri);
+    try {
+        // 1. Resize image to reduce payload size
+        const manipResult = await ImageManipulator.manipulateAsync(
+            uri,
+            [{ resize: { width: 1024 } }],
+            { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+
+        // 2. Convert to base64
+        const base64 = await FileSystem.readAsStringAsync(manipResult.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // 3. Call Supabase Edge Function
+        const { data, error } = await supabase.functions.invoke('analyze-food', {
+            body: { imageBase64: base64 }
+        });
+
+        if (error) {
+            throw new Error(error.message || 'Analysis failed');
+        }
+
+        return data as AnalysisResult;
+    } catch (error: any) {
+        console.error('Food analysis error:', error);
+        throw error;
+    }
 }
 
 /**
  * Get quota information
+ * TODO: Implement server-side quota tracking via Supabase
  */
 export async function getQuotaInfo() {
-    const aiService = AIService.getInstance();
-    await aiService.initialize();
-    return await aiService.getQuotaInfo();
+    // For now, return mock data
+    // In production, this should query Supabase analysis_requests table
+    return {
+        dailyLimit: 10,
+        used: 0,
+        remaining: 10,
+        retryBudget: 1,
+        retryBudgetUsed: 0,
+        resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    };
 }
-
-/**
- * Export AI error for error handling in UI
- */
-export { AIError };

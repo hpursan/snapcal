@@ -23,8 +23,11 @@ export class AIClient {
             throw new Error("Missing EXPO_PUBLIC_GEMINI_API_KEY");
         }
         this.genAI = new GoogleGenerativeAI(API_KEY);
-        // Use gemini-pro which is the stable model name
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-pro" });
+
+        // Use current stable model (as of Feb 2026)
+        // TODO: Move to Supabase Edge Function for production stability
+        // This allows updating model without app deployment
+        this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     }
 
     /**
