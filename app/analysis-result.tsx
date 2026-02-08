@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { analyzeFoodImage, AnalysisResult } from '@/services/FoodAnalysisService';
 import { MealService } from '@/services/MealService';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import * as Network from 'expo-network';
 import { Ionicons } from '@expo/vector-icons';
 import { ENERGY_BAND_LABELS } from '@/types/Meal';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -28,6 +29,12 @@ export default function AnalysisResultScreen() {
         setError(null);
 
         try {
+            // Check network status first
+            const networkState = await Network.getNetworkStateAsync();
+            if (!networkState.isConnected) {
+                throw new Error("No internet connection detected. Please check your settings.");
+            }
+
             const data = await analyzeFoodImage(imageUri as string);
             setResult(data);
             setRetryCount(0); // Reset retry count on success

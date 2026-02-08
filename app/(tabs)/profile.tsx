@@ -2,6 +2,8 @@ import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Switch, 
 import { useRouter } from 'expo-router';
 import { MealService } from '@/services/MealService';
 import { OnboardingService } from '@/services/OnboardingService';
+import { getQuotaInfo } from '@/services/FoodAnalysisService';
+import { useState, useEffect } from 'react';
 import { GlassBackground } from '@/components/GlassBackground';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +12,15 @@ import { useTheme } from '@/context/ThemeContext';
 export default function ProfileScreen() {
     const router = useRouter();
     const { isDark, toggleTheme } = useTheme();
+    const [quota, setQuota] = useState<any>(null);
+
+    useEffect(() => {
+        const fetchQuota = async () => {
+            const info = await getQuotaInfo();
+            setQuota(info);
+        };
+        fetchQuota();
+    }, []);
 
     const handleReset = () => {
         Alert.alert("Reset Data", "Are you sure? This will delete all local meal logs. This action cannot be undone.", [
@@ -96,6 +107,24 @@ export default function ProfileScreen() {
                         <Text style={styles.description}>
                             Your meal photos and logs are stored locally on your device.
                             AI analysis is stateless (no images saved on server).
+                        </Text>
+
+                        <View style={styles.divider} />
+
+                        {/* Quota Info */}
+                        <View style={styles.row}>
+                            <Ionicons name="flash-outline" size={24} color="#FFD700" />
+                            <Text style={styles.label}>Daily Analysis Quota</Text>
+                        </View>
+                        {quota ? (
+                            <Text style={styles.value}>
+                                {quota.remaining} / {quota.dailyLimit} remaining today
+                            </Text>
+                        ) : (
+                            <Text style={styles.value}>Loading...</Text>
+                        )}
+                        <Text style={styles.description}>
+                            This helps us keep the app free and prevent AI abuse.
                         </Text>
 
                         <View style={styles.divider} />

@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, Image, Button } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, Button, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useState, useRef } from 'react';
 import { Colors } from '@/constants/Colors';
@@ -11,6 +11,7 @@ export default function CameraScreen() {
     const router = useRouter();
     const [permission, requestPermission] = useCameraPermissions();
     const [photo, setPhoto] = useState<string | null>(null);
+    const [isCapturing, setIsCapturing] = useState(false);
     const cameraRef = useRef<CameraView>(null);
     const colorScheme = useColorScheme();
     const theme = Colors[colorScheme ?? 'dark'];
@@ -31,11 +32,11 @@ export default function CameraScreen() {
     }
 
     const takePicture = async () => {
-        if (cameraRef.current) {
+        if (cameraRef.current && !isCapturing) {
+            setIsCapturing(true);
             try {
                 const result = await cameraRef.current.takePictureAsync({
-                    quality: 0.7,
-                    base64: true,
+                    quality: 0.8,
                     skipProcessing: false,
                 });
                 if (result?.uri) {
@@ -43,6 +44,8 @@ export default function CameraScreen() {
                 }
             } catch (e) {
                 console.error("Failed to take picture", e);
+            } finally {
+                setIsCapturing(false);
             }
         }
     };
@@ -107,8 +110,16 @@ export default function CameraScreen() {
                         <Ionicons name="images" size={28} color="#fff" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.shutterButtonOuter} onPress={takePicture}>
-                        <View style={styles.shutterButtonInner} />
+                    <TouchableOpacity
+                        style={[styles.shutterButtonOuter, isCapturing && { opacity: 0.5 }]}
+                        onPress={takePicture}
+                        disabled={isCapturing}
+                    >
+                        {isCapturing ? (
+                            <ActivityIndicator size="large" color="#fff" />
+                        ) : (
+                            <View style={styles.shutterButtonInner} />
+                        )}
                     </TouchableOpacity>
 
                     {/* Placeholder for balance */}
