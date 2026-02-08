@@ -1,20 +1,55 @@
-// Production-Ready Two-Tier Food Analysis Edge Function
-// Tier 1: Fast food detection (gemini-2.0-flash-lite)
-// Tier 2: Detailed analysis (gemini-flash-lite-latest)
-// Includes: Rate limiting, usage tracking, error handling
+// Production-Ready Security-Hardened Food Analysis Edge Function
+// Security Features:
+// - Device-based rate limiting (prevents quota bypass via reinstall)
+// - Payload size validation (prevents cost explosion)
+// - Fail-closed security checks (deny on error)
+// - Request timeouts (prevents resource exhaustion)
+// - CORS restrictions (app-only access)
+// - Request deduplication (prevents spam)
+// - Input sanitization (prevents injection attacks)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// Security Configuration
+const RATE_LIMIT_PER_DAY = 10;
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB in base64
+const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+const DEDUP_WINDOW_MINUTES = 5;
+
+// CORS - Restrict to app only
+const ALLOWED_ORIGINS = [
+    'capacitor://localhost', // iOS/Android
+    'http://localhost:8081',  // Dev
+];
+
+function getCorsHeaders(origin: string | null) {
+    return {
+        'Access-Control-Allow-Origin': (origin && ALLOWED_ORIGINS.includes(origin)) ? origin : '',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    };
 }
 
-// Rate limit: 10 requests per user per day
-const RATE_LIMIT_PER_DAY = 10;
+// Helper: Create timeout signal
+function createTimeoutSignal(ms: number): AbortSignal {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+}
+
+// Helper: Hash image for deduplication
+async function hashImage(base64: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(base64.substring(0, 10000)); // First 10KB
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 serve(async (req) => {
+    const origin = req.headers.get('origin');
+    const corsHeaders = getCorsHeaders(origin);
+
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
@@ -39,19 +74,74 @@ serve(async (req) => {
 
         const userId = user.id;
 
-        // 2. Check rate limit (last 24 hours)
+        // 2. Parse and validate request
+        const { imageBase64, deviceId } = await req.json()
+
+        if (!imageBase64) {
+            return new Response(JSON.stringify({ error: 'No image provided' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            })
+        }
+
+        if (!deviceId || deviceId === 'unknown') {
+            return new Response(JSON.stringify({
+                error: 'Device identification required',
+                message: 'Please update your app to the latest version'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            })
+        }
+
+        // 3. Validate payload size (SECURITY: Prevent cost explosion)
+        if (imageBase64.length > MAX_IMAGE_SIZE_BYTES) {
+            return new Response(JSON.stringify({
+                error: 'Image too large',
+                message: 'Please use an image smaller than 5MB'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 413,
+            })
+        }
+
+        // 4. Validate base64 format (SECURITY: Input sanitization)
+        if (!/^[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+            return new Response(JSON.stringify({
+                error: 'Invalid image format'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            })
+        }
+
+        // 5. Get client IP for backup rate limiting
+        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] ||
+            req.headers.get('x-real-ip') ||
+            'unknown';
+
+        // 6. Check device-based rate limit (SECURITY: Prevent quota bypass via reinstall)
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-        const { data: recentRequests, error: countError } = await supabaseClient
+        const { count: deviceCount, error: deviceCountError } = await supabaseClient
             .from('analysis_requests')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
+            .select('*', { count: 'exact', head: true })
+            .eq('device_id', deviceId)
             .gte('created_at', twentyFourHoursAgo);
 
-        if (countError) {
-            console.error('Rate limit check error:', countError);
-            // Continue anyway - don't block on rate limit check failure
-        } else if (recentRequests && recentRequests.length >= RATE_LIMIT_PER_DAY) {
+        // SECURITY: Fail closed - deny on error
+        if (deviceCountError) {
+            console.error('Rate limit check error:', deviceCountError);
+            return new Response(JSON.stringify({
+                error: 'Service temporarily unavailable',
+                message: 'Please try again in a moment'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 503,
+            })
+        }
+
+        if (deviceCount !== null && deviceCount >= RATE_LIMIT_PER_DAY) {
             return new Response(JSON.stringify({
                 error: 'Rate limit exceeded',
                 message: `You've reached your daily limit of ${RATE_LIMIT_PER_DAY} analyses. Try again tomorrow.`,
@@ -62,12 +152,25 @@ serve(async (req) => {
             })
         }
 
-        // 3. Parse request
-        const { imageBase64 } = await req.json()
-        if (!imageBase64) {
-            return new Response(JSON.stringify({ error: 'No image provided' }), {
+        // 7. Check for duplicate requests (SECURITY: Prevent spam)
+        const imageHash = await hashImage(imageBase64);
+        const dedupWindow = new Date(Date.now() - DEDUP_WINDOW_MINUTES * 60 * 1000).toISOString();
+
+        const { data: recentDuplicates, error: dedupError } = await supabaseClient
+            .from('analysis_requests')
+            .select('id')
+            .eq('device_id', deviceId)
+            .eq('image_hash', imageHash)
+            .gte('created_at', dedupWindow)
+            .limit(1);
+
+        if (!dedupError && recentDuplicates && recentDuplicates.length > 0) {
+            return new Response(JSON.stringify({
+                error: 'Duplicate request',
+                message: 'You already analyzed this image recently. Please wait a few minutes before trying again.'
+            }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
+                status: 429,
             })
         }
 
@@ -76,11 +179,10 @@ serve(async (req) => {
             throw new Error('GEMINI_API_KEY not configured')
         }
 
-        // 4. TIER 1: Quick food detection (cheap model)
+        // 8. TIER 1: Quick food detection (cheap model)
         console.log('Tier 1: Running food detection...');
 
         // Model fallback chain (production-stable approach)
-        // Try models in order until one works
         const tier1Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
         const tier1Prompt = `Is this image a photo of food or a meal? 
@@ -92,7 +194,6 @@ serve(async (req) => {
         - Photo of a car → {"isFood": false, "confidence": "high"}
         - Random screenshot → {"isFood": false, "confidence": "high"}`;
 
-
         const tier1Payload = {
             contents: [{
                 parts: [
@@ -103,7 +204,7 @@ serve(async (req) => {
             generationConfig: { response_mime_type: "application/json" }
         };
 
-        // Try models in fallback chain
+        // Try models in fallback chain with timeout
         let tier1Data;
         let tier1Response;
         let lastError;
@@ -111,12 +212,15 @@ serve(async (req) => {
         for (const model of tier1Models) {
             try {
                 console.log(`Trying model: ${model}`);
+
+                // SECURITY: Add timeout to prevent hanging
                 tier1Response = await fetch(
                     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(tier1Payload)
+                        body: JSON.stringify(tier1Payload),
+                        signal: createTimeoutSignal(REQUEST_TIMEOUT_MS)
                     }
                 );
 
@@ -129,7 +233,7 @@ serve(async (req) => {
                     lastError = tier1Data.error?.message || "API Error";
                     console.log(`Model ${model} failed: ${lastError}`);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 lastError = error.message;
                 console.log(`Model ${model} error: ${lastError}`);
             }
@@ -142,10 +246,12 @@ serve(async (req) => {
         const tier1Text = tier1Data.candidates[0].content.parts[0].text;
         const tier1Result = JSON.parse(tier1Text);
 
-
-        // Log Tier 1 result
+        // Log Tier 1 result with security metadata
         await supabaseClient.from('analysis_requests').insert({
             user_id: userId,
+            device_id: deviceId,
+            ip_address: clientIp,
+            image_hash: imageHash,
             tier_1_result: tier1Result.isFood ? 'food' : 'not_food',
             tier_2_success: null
         });
@@ -162,10 +268,9 @@ serve(async (req) => {
             })
         }
 
-        // 5. TIER 2: Detailed analysis (smart model)
+        // 9. TIER 2: Detailed analysis (smart model)
         console.log('Tier 2: Running detailed analysis...');
 
-        // Model fallback chain for detailed analysis
         const tier2Models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
         const tier2Prompt = `
@@ -192,7 +297,6 @@ serve(async (req) => {
         }
         `;
 
-
         const tier2Payload = {
             contents: [{
                 parts: [
@@ -203,7 +307,7 @@ serve(async (req) => {
             generationConfig: { response_mime_type: "application/json" }
         };
 
-        // Try models in fallback chain
+        // Try models in fallback chain with timeout
         let tier2Data;
         let tier2Response;
         let lastTier2Error;
@@ -211,12 +315,15 @@ serve(async (req) => {
         for (const model of tier2Models) {
             try {
                 console.log(`Trying Tier 2 model: ${model}`);
+
+                // SECURITY: Add timeout
                 tier2Response = await fetch(
                     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(tier2Payload)
+                        body: JSON.stringify(tier2Payload),
+                        signal: createTimeoutSignal(REQUEST_TIMEOUT_MS)
                     }
                 );
 
@@ -229,7 +336,7 @@ serve(async (req) => {
                     lastTier2Error = tier2Data.error?.message || "API Error";
                     console.log(`Tier 2 model ${model} failed: ${lastTier2Error}`);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 lastTier2Error = error.message;
                 console.log(`Tier 2 model ${model} error: ${lastTier2Error}`);
             }
@@ -239,6 +346,9 @@ serve(async (req) => {
             // Log failure
             await supabaseClient.from('analysis_requests').insert({
                 user_id: userId,
+                device_id: deviceId,
+                ip_address: clientIp,
+                image_hash: imageHash,
                 tier_1_result: 'food',
                 tier_2_success: false,
                 error_message: lastTier2Error || 'All Tier 2 models failed'
@@ -253,17 +363,20 @@ serve(async (req) => {
         // Log success
         await supabaseClient.from('analysis_requests').insert({
             user_id: userId,
+            device_id: deviceId,
+            ip_address: clientIp,
+            image_hash: imageHash,
             tier_1_result: 'food',
             tier_2_success: true
         });
 
-        // 6. Return detailed analysis
+        // 10. Return detailed analysis
         return new Response(JSON.stringify(tier2Result), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 200,
         })
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Edge Function Error:', error);
         return new Response(JSON.stringify({
             error: error.message || 'Analysis failed',

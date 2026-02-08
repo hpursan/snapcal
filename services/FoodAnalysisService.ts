@@ -8,6 +8,7 @@ import { supabase } from './Supabase';
 import { AnalysisResult } from './ai/types';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as Device from 'expo-device';
 
 export type { AnalysisResult };
 
@@ -29,9 +30,15 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
             encoding: 'base64',
         });
 
-        // 3. Call Supabase Edge Function
+        // 3. Get device ID for rate limiting (prevents quota bypass via reinstall)
+        const deviceId = Device.osBuildFingerprint || Device.osInternalBuildId || 'unknown';
+
+        // 4. Call Supabase Edge Function
         const { data, error } = await supabase.functions.invoke('analyze-food', {
-            body: { imageBase64: base64 }
+            body: {
+                imageBase64: base64,
+                deviceId: deviceId
+            }
         });
 
         if (error) {
