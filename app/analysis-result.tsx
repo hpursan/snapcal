@@ -79,7 +79,9 @@ export default function AnalysisResultScreen() {
             } else if (e.message?.toLowerCase().includes('readasstringasync') || e.message?.toLowerCase().includes('filesystem')) {
                 setError("System error accessing image. We are working on a fix.");
             } else {
-                setError("Could not analyze image. Please try again or take a new photo.");
+                // EXPOSE RAW ERROR FOR DEBUGGING - The user needs to see the truth to help us fix it
+                const rawMsg = e.message || JSON.stringify(e);
+                setError(`Analysis Failed: ${rawMsg}`);
             }
         } finally {
             setIsLoading(false);

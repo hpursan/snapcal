@@ -9,6 +9,10 @@ import { AnalysisResult } from './ai/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
+import * as Application from 'expo-application';
+import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 export type { AnalysisResult };
 
@@ -30,8 +34,31 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
             encoding: 'base64',
         });
 
-        // 3. Get device ID for rate limiting (prevents quota bypass via reinstall)
-        const deviceId = Device.osBuildFingerprint || Device.osInternalBuildId || 'unknown';
+        // 3. Get robust device/installation ID for rate limiting
+        let deviceId = 'unknown';
+        try {
+            if (Platform.OS === 'ios') {
+                deviceId = await Application.getIosIdForVendorAsync() || 'unknown-ios';
+            } else if (Platform.OS === 'android') {
+                deviceId = Application.getAndroidId() || 'unknown-android';
+            }
+
+            // Fallback to a persistent generated ID if hardware ID is missing
+            if (deviceId === 'unknown' || !deviceId) {
+                const storedId = await AsyncStorage.getItem('app_installation_id');
+                if (storedId) {
+                    deviceId = storedId;
+                } else {
+                    const newId = `gen_${Crypto.randomUUID()}`;
+                    await AsyncStorage.setItem('app_installation_id', newId);
+                    deviceId = newId;
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to get device ID:', e);
+        }
+
+        console.log('Using Device ID for analysis:', deviceId);
 
         // 4. Call Supabase Edge Function
         const { data, error } = await supabase.functions.invoke('analyze-food', {

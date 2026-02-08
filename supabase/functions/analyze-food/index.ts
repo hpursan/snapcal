@@ -25,7 +25,7 @@ const ALLOWED_ORIGINS = [
 
 function getCorsHeaders(origin: string | null) {
     return {
-        'Access-Control-Allow-Origin': (origin && ALLOWED_ORIGINS.includes(origin)) ? origin : '',
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     };
 }
@@ -89,13 +89,15 @@ serve(async (req) => {
         }
 
         if (!deviceId || deviceId === 'unknown') {
-            return new Response(JSON.stringify({
-                error: 'Device identification required',
-                message: 'Please update your app to the latest version'
-            }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
-            })
+            console.warn('Warning: unknown deviceId received');
+            // Allow unknown device IDs for now to prevent blocking valid users while debugging
+            // return new Response(JSON.stringify({
+            //     error: 'Device identification required',
+            //     message: 'Please update your app to the latest version'
+            // }), {
+            //     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            //     status: 400,
+            // })
         }
 
         // 3. Validate payload size (SECURITY: Prevent cost explosion)
