@@ -58,8 +58,15 @@ serve(async (req) => {
     try {
         // 1. Authenticate user
         const authHeader = req.headers.get('Authorization');
-        console.log('Auth check: Authorization header present?', !!authHeader);
 
+        // Use service role for database operations to ensure records are ALWAYS saved
+        const supabaseService = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_KEY') ?? '',
+            { auth: { persistSession: false } }
+        )
+
+        // But still check the user's identity
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -67,10 +74,13 @@ serve(async (req) => {
         )
 
         const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
-        console.log('Auth check: User found?', !!user, 'Error?', authError?.message);
 
-        if (!user) {
-            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        if (authError || !user) {
+            console.error('Auth check failed:', authError?.message);
+            return new Response(JSON.stringify({
+                error: 'Unauthorized',
+                message: authError?.message || 'Please sign in to continue'
+            }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 401,
             })
@@ -128,43 +138,34 @@ serve(async (req) => {
             req.headers.get('x-real-ip') ||
             'unknown';
 
-        // 6. Check device-based rate limit (SECURITY: Prevent quota bypass via reinstall)
+        // 6. Check device-based rate limit
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-        const { count: deviceCount, error: deviceCountError } = await supabaseClient
+        const { count: deviceCount, error: deviceCountError } = await supabaseService
             .from('analysis_requests')
             .select('*', { count: 'exact', head: true })
             .eq('device_id', deviceId)
             .gte('created_at', twentyFourHoursAgo);
 
-        // SECURITY: Fail closed - deny on error
         if (deviceCountError) {
             console.error('Rate limit check error:', deviceCountError);
-            return new Response(JSON.stringify({
-                error: 'Service temporarily unavailable',
-                message: 'Please try again in a moment'
-            }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 503,
-            })
         }
 
         if (deviceCount !== null && deviceCount >= RATE_LIMIT_PER_DAY) {
             return new Response(JSON.stringify({
                 error: 'Rate limit exceeded',
-                message: `You've reached your daily limit of ${RATE_LIMIT_PER_DAY} analyses. Try again tomorrow.`,
-                remainingRequests: 0
+                message: `You've reached your daily limit of ${RATE_LIMIT_PER_DAY} analyses. Try again tomorrow.`
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 429,
             })
         }
 
-        // 7. Check for duplicate requests (SECURITY: Prevent spam)
+        // 7. Check for duplicate requests
         const imageHash = await hashImage(imageBase64);
         const dedupWindow = new Date(Date.now() - DEDUP_WINDOW_MINUTES * 60 * 1000).toISOString();
 
-        const { data: recentDuplicates, error: dedupError } = await supabaseClient
+        const { data: recentDuplicates, error: dedupError } = await supabaseService
             .from('analysis_requests')
             .select('id')
             .eq('device_id', deviceId)
@@ -175,7 +176,7 @@ serve(async (req) => {
         if (!dedupError && recentDuplicates && recentDuplicates.length > 0) {
             return new Response(JSON.stringify({
                 error: 'Duplicate request',
-                message: 'You already analyzed this image recently. Please wait a few minutes before trying again.'
+                message: 'You already analyzed this image recently.'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 429,
@@ -190,8 +191,8 @@ serve(async (req) => {
         // 8. TIER 1: Quick food detection (cheap model)
         console.log('Tier 1: Running food detection...');
 
-        // Model fallback chain (current valid models)
-        const tier1Models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        // Model fallback chain (Stable v1 models)
+        const tier1Models = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
 
         const tier1Prompt = `Is this image a photo of food or a meal? 
         Respond with ONLY a JSON object: {"isFood": true/false, "confidence": "high"/"medium"/"low"}
@@ -223,7 +224,7 @@ serve(async (req) => {
 
                 // SECURITY: Add timeout to prevent hanging
                 tier1Response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${API_KEY}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -256,8 +257,8 @@ serve(async (req) => {
         tier1Text = tier1Text.replace(/```json/g, '').replace(/```/g, '').trim();
         const tier1Result = JSON.parse(tier1Text);
 
-        // Log Tier 1 result with security metadata (Use select().single() to get ID for update)
-        const { data: requestRecord, error: insertError } = await supabaseClient.from('analysis_requests').insert({
+        // Log Tier 1 result
+        const { data: requestRecord, error: insertError } = await supabaseService.from('analysis_requests').insert({
             user_id: userId,
             device_id: deviceId,
             ip_address: clientIp,
@@ -267,7 +268,7 @@ serve(async (req) => {
         }).select('id').single();
 
         if (insertError) {
-            console.error('Record insertion error:', insertError);
+            console.error('Record insertion error:', insertError.message);
         }
 
         const requestId = requestRecord?.id;
@@ -287,7 +288,7 @@ serve(async (req) => {
         // 9. TIER 2: Detailed analysis (smart model)
         console.log('Tier 2: Running detailed analysis...');
 
-        const tier2Models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        const tier2Models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
 
         const tier2Prompt = `
         Analyze this food image for a "Meal Insights" app (Aperioesca). 
@@ -334,7 +335,7 @@ serve(async (req) => {
 
                 // SECURITY: Add timeout
                 tier2Response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${API_KEY}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -389,10 +390,28 @@ serve(async (req) => {
         })
 
     } catch (error: any) {
-        console.error('Edge Function Error:', error);
+        console.error('Edge Function Fatal Error:', error);
+
+        // ATTEMPT REMOTE LOGGING OF FATAL ERROR
+        try {
+            const supabaseService = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_KEY') ?? '',
+                { auth: { persistSession: false } }
+            );
+            await supabaseService.from('client_logs').insert({
+                level: 'FATAL',
+                message: `Edge Function Failure: ${error.message}`,
+                context: { stack: error.stack, code: error.code },
+                device_id: 'server-edge-function'
+            });
+        } catch (logError) {
+            console.error('Double failure - could not log to client_logs:', logError);
+        }
+
         return new Response(JSON.stringify({
             error: error.message || 'Analysis failed',
-            message: 'Unable to analyze image. Please try again.'
+            message: `Server Error: ${error.message || 'Unknown failure'}`
         }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 500,
