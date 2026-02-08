@@ -1,13 +1,4 @@
 // Production-Ready Security-Hardened Food Analysis Edge Function
-// Security Features:
-// - Device-based rate limiting (prevents quota bypass via reinstall)
-// - Payload size validation (prevents cost explosion)
-// - Fail-closed security checks (deny on error)
-// - Request timeouts (prevents resource exhaustion)
-// - CORS restrictions (app-only access)
-// - Request deduplication (prevents spam)
-// - Input sanitization (prevents injection attacks)
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -17,13 +8,7 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB in base64
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 const DEDUP_WINDOW_MINUTES = 5;
 
-// CORS - Restrict to app only
-const ALLOWED_ORIGINS = [
-    'capacitor://localhost', // iOS/Android
-    'http://localhost:8081',  // Dev
-];
-
-function getCorsHeaders(origin: string | null) {
+function getCorsHeaders() {
     return {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -47,8 +32,7 @@ async function hashImage(base64: string): Promise<string> {
 }
 
 serve(async (req) => {
-    const origin = req.headers.get('origin');
-    const corsHeaders = getCorsHeaders(origin);
+    const corsHeaders = getCorsHeaders();
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -98,19 +82,9 @@ serve(async (req) => {
             })
         }
 
-        if (!deviceId || deviceId === 'unknown') {
-            console.warn('Warning: unknown deviceId received');
-            // Allow unknown device IDs for now to prevent blocking valid users while debugging
-            // return new Response(JSON.stringify({
-            //     error: 'Device identification required',
-            //     message: 'Please update your app to the latest version'
-            // }), {
-            //     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            //     status: 400,
-            // })
-        }
+        const deviceIdVal = deviceId || 'unknown';
 
-        // 3. Validate payload size (SECURITY: Prevent cost explosion)
+        // 3. Validate payload size
         if (imageBase64.length > MAX_IMAGE_SIZE_BYTES) {
             return new Response(JSON.stringify({
                 error: 'Image too large',
@@ -121,8 +95,7 @@ serve(async (req) => {
             })
         }
 
-        // 4. Validate base64 format (SECURITY: Input sanitization)
-        // Loosened to allow whitespace which some encoders might include
+        // 4. Validate base64 format
         if (!/^[A-Za-z0-9+/=\s]+$/.test(imageBase64)) {
             return new Response(JSON.stringify({
                 error: 'Invalid image format',
@@ -133,7 +106,7 @@ serve(async (req) => {
             })
         }
 
-        // 5. Get client IP for backup rate limiting
+        // 5. Get client IP 
         const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] ||
             req.headers.get('x-real-ip') ||
             'unknown';
@@ -144,7 +117,7 @@ serve(async (req) => {
         const { count: deviceCount, error: deviceCountError } = await supabaseService
             .from('analysis_requests')
             .select('*', { count: 'exact', head: true })
-            .eq('device_id', deviceId)
+            .eq('device_id', deviceIdVal)
             .gte('created_at', twentyFourHoursAgo);
 
         if (deviceCountError) {
@@ -168,7 +141,7 @@ serve(async (req) => {
         const { data: recentDuplicates, error: dedupError } = await supabaseService
             .from('analysis_requests')
             .select('id')
-            .eq('device_id', deviceId)
+            .eq('device_id', deviceIdVal)
             .eq('image_hash', imageHash)
             .gte('created_at', dedupWindow)
             .limit(1);
@@ -188,11 +161,10 @@ serve(async (req) => {
             throw new Error('GEMINI_API_KEY not configured')
         }
 
-        // 8. TIER 1: Quick food detection (cheap model)
+        // 8. TIER 1: Quick food detection
         console.log('Tier 1: Running food detection...');
 
-        // Model fallback chain (Stable v1 models)
-        const tier1Models = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+        const tier1Models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
 
         const tier1Prompt = `Is this image a photo of food or a meal? 
         Respond with ONLY a JSON object: {"isFood": true/false, "confidence": "high"/"medium"/"low"}
@@ -209,8 +181,7 @@ serve(async (req) => {
                     { text: tier1Prompt },
                     { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
                 ]
-            }],
-            generationConfig: { responseMimeType: "application/json" }
+            }]
         };
 
         // Try models in fallback chain with timeout
@@ -221,8 +192,6 @@ serve(async (req) => {
         for (const model of tier1Models) {
             try {
                 console.log(`Trying model: ${model}`);
-
-                // SECURITY: Add timeout to prevent hanging
                 tier1Response = await fetch(
                     `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${API_KEY}`,
                     {
@@ -237,7 +206,7 @@ serve(async (req) => {
 
                 if (tier1Response.ok) {
                     console.log(`Success with Tier 1 model: ${model}`);
-                    break; // Success! Exit loop
+                    break;
                 } else {
                     lastError = tier1Data.error?.message || "API Error";
                     console.log(`Tier 1 model ${model} failed: ${lastError}`, JSON.stringify(tier1Data.error));
@@ -253,14 +222,23 @@ serve(async (req) => {
         }
 
         let tier1Text = tier1Data.candidates[0].content.parts[0].text;
-        // Clean markdown code blocks if present (LLMs sometimes add them even when told not to)
-        tier1Text = tier1Text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const tier1Result = JSON.parse(tier1Text);
+
+        // Helper: Robust JSON extraction
+        const extractJson = (text: string) => {
+            const start = text.indexOf('{');
+            const end = text.lastIndexOf('}');
+            if (start !== -1 && end !== -1) {
+                return text.substring(start, end + 1);
+            }
+            return text;
+        };
+
+        const tier1Result = JSON.parse(extractJson(tier1Text));
 
         // Log Tier 1 result
         const { data: requestRecord, error: insertError } = await supabaseService.from('analysis_requests').insert({
             user_id: userId,
-            device_id: deviceId,
+            device_id: deviceIdVal,
             ip_address: clientIp,
             image_hash: imageHash,
             tier_1_result: tier1Result.isFood ? 'food' : 'not_food',
@@ -273,22 +251,20 @@ serve(async (req) => {
 
         const requestId = requestRecord?.id;
 
-        // If not food, reject early
         if (!tier1Result.isFood) {
             return new Response(JSON.stringify({
                 error: 'Not food detected',
-                message: 'This image doesn\'t appear to contain food. Please take a photo of your meal.',
-                tier1Result
+                message: 'This image doesn\'t appear to contain food. Please take a photo of your meal.'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,
             })
         }
 
-        // 9. TIER 2: Detailed analysis (smart model)
+        // 9. TIER 2: Detailed analysis
         console.log('Tier 2: Running detailed analysis...');
 
-        const tier2Models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+        const tier2Models = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-2.5-pro'];
 
         const tier2Prompt = `
         Analyze this food image for a "Meal Insights" app (Aperioesca). 
@@ -302,15 +278,15 @@ serve(async (req) => {
         Return STRICT JSON:
         {
             "mealType": "breakfast" | "lunch" | "dinner" | "snack",
-            "energyBand": "very_light" (<300kcal) | "light" (300-500) | "moderate" (500-800) | "heavy" (800-1200) | "very_heavy" (>1200),
-            "confidence": "high" (clear items) | "medium" (hidden ingredients) | "low" (cluttered/blurry),
-            "reasoning": "Short (1 sentence) explanation. Focus on 'Why'. E.g. 'Fried dough and sugar glaze make this very energy dense.'",
+            "energyBand": "very_light" | "light" | "moderate" | "heavy" | "very_heavy",
+            "confidence": "high" | "medium" | "low",
+            "reasoning": "Short (1 sentence) explanation.",
             "flags": {
                 "mixedPlate": boolean,
                 "unclearPortions": boolean,
                 "sharedDish": boolean
             },
-            "insight": "One interesting observation about the macro balance. E.g. 'High sugar punch for breakfast.'"
+            "insight": "One interesting observation about the meal."
         }
         `;
 
@@ -320,11 +296,9 @@ serve(async (req) => {
                     { text: tier2Prompt },
                     { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
                 ]
-            }],
-            generationConfig: { responseMimeType: "application/json" }
+            }]
         };
 
-        // Try models in fallback chain with timeout
         let tier2Data;
         let tier2Response;
         let lastTier2Error;
@@ -332,8 +306,6 @@ serve(async (req) => {
         for (const model of tier2Models) {
             try {
                 console.log(`Trying Tier 2 model: ${model}`);
-
-                // SECURITY: Add timeout
                 tier2Response = await fetch(
                     `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${API_KEY}`,
                     {
@@ -348,7 +320,7 @@ serve(async (req) => {
 
                 if (tier2Response.ok) {
                     console.log(`Success with Tier 2 model: ${model}`);
-                    break; // Success! Exit loop
+                    break;
                 } else {
                     lastTier2Error = tier2Data.error?.message || "API Error";
                     console.log(`Tier 2 model ${model} failed: ${lastTier2Error}`);
@@ -360,30 +332,24 @@ serve(async (req) => {
         }
 
         if (!tier2Response?.ok) {
-            // Log failure (Update existing record if possible)
             if (requestId) {
-                await supabaseClient.from('analysis_requests').update({
+                await supabaseService.from('analysis_requests').update({
                     tier_2_success: false,
                     error_message: lastTier2Error || 'All Tier 2 models failed'
                 }).eq('id', requestId);
             }
-
             throw new Error(lastTier2Error || "All Tier 2 models failed");
         }
 
         let tier2Text = tier2Data.candidates[0].content.parts[0].text;
-        // Clean markdown
-        tier2Text = tier2Text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const tier2Result = JSON.parse(tier2Text);
+        const tier2Result = JSON.parse(extractJson(tier2Text));
 
-        // Log success (Update existing record)
         if (requestId) {
-            await supabaseClient.from('analysis_requests').update({
+            await supabaseService.from('analysis_requests').update({
                 tier_2_success: true
             }).eq('id', requestId);
         }
 
-        // 10. Return detailed analysis
         return new Response(JSON.stringify(tier2Result), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 200,
@@ -392,7 +358,6 @@ serve(async (req) => {
     } catch (error: any) {
         console.error('Edge Function Fatal Error:', error);
 
-        // ATTEMPT REMOTE LOGGING OF FATAL ERROR
         try {
             const supabaseService = createClient(
                 Deno.env.get('SUPABASE_URL') ?? '',
@@ -406,7 +371,7 @@ serve(async (req) => {
                 device_id: 'server-edge-function'
             });
         } catch (logError) {
-            console.error('Double failure - could not log to client_logs:', logError);
+            console.error('Double failure:', logError);
         }
 
         return new Response(JSON.stringify({
