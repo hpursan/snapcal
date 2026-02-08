@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ENERGY_BAND_LABELS } from '@/types/Meal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase, signInAnonymously } from '@/services/Supabase';
+import { logger } from '@/services/LogService';
 
 export default function AnalysisResultScreen() {
     const router = useRouter();
@@ -40,9 +41,10 @@ export default function AnalysisResultScreen() {
             let { data: { session } } = await supabase.auth.getSession();
             if (!session) {
                 console.log("No session found in AnalysisResult, attempting re-auth...");
-                const user = await signInAnonymously();
+                const { user, error: authError } = await signInAnonymously();
                 if (!user) {
-                    throw new Error("Authentication failed. Please try again later.");
+                    const msg = authError?.message || "Please check your internet connection.";
+                    throw new Error(`Authentication failed: ${msg}`);
                 }
                 // Refresh session after re-auth
                 const { data: { session: newSession } } = await supabase.auth.getSession();
@@ -59,6 +61,13 @@ export default function AnalysisResultScreen() {
                 message: e.message,
                 type: e.type,
                 name: e.name,
+            });
+
+            logger.error(`Food Analysis Failure: ${e.message}`, {
+                errorType: e.type || e.name || 'Unknown',
+                imageUri: String(imageUri).substring(0, 50) + '...', // Don't log full base64/uri if sensitive
+                platform: Platform.OS,
+                retryCount
             });
 
             // Provide user-friendly error messages

@@ -1,9 +1,10 @@
-import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Switch, Linking } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Switch, Linking, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MealService } from '@/services/MealService';
 import { OnboardingService } from '@/services/OnboardingService';
 import { getQuotaInfo } from '@/services/FoodAnalysisService';
 import { useState, useEffect } from 'react';
+import { logger } from '@/services/LogService';
 import { GlassBackground } from '@/components/GlassBackground';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,6 +68,28 @@ export default function ProfileScreen() {
         } else {
             Alert.alert('Error', 'Unable to open Terms of Service');
         }
+    };
+
+    const handleSendDiagnostics = async () => {
+        Alert.alert("Send Diagnostic Report", "This will upload a snapshot of your app settings and recent errors to our team for debugging. No personal info or photos are included.", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Send Report",
+                onPress: async () => {
+                    try {
+                        await logger.warn("User initiated diagnostic report", {
+                            quotaInfo: quota,
+                            platform: Platform.OS,
+                            version: "1.0.0",
+                            timestamp: new Date().toISOString()
+                        });
+                        Alert.alert("Success", "Diagnostic report sent. Thank you!");
+                    } catch (e) {
+                        Alert.alert("Error", "Failed to send report. Please check your internet.");
+                    }
+                }
+            }
+        ]);
     };
 
     return (
@@ -158,6 +181,11 @@ export default function ProfileScreen() {
                         <Ionicons name="refresh-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
                         <Text style={styles.buttonText}>Reset Onboarding (Debug)</Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.button, styles.diagnosticButton]} onPress={handleSendDiagnostics}>
+                        <Ionicons name="bug-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                        <Text style={styles.buttonText}>Send Diagnostic Report</Text>
+                    </TouchableOpacity>
                 </View>
             </SafeAreaView>
         </GlassBackground>
@@ -223,6 +251,10 @@ const styles = StyleSheet.create({
     },
     debugButton: {
         backgroundColor: '#A18CD1',
+        marginTop: 12,
+    },
+    diagnosticButton: {
+        backgroundColor: '#607D8B',
         marginTop: 12,
     },
     linkRow: {

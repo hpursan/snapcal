@@ -18,12 +18,12 @@ export const signInAnonymously = async () => {
     try {
         const { data, error } = await supabase.auth.signInAnonymously();
         if (error) {
-            console.error("Supabase Auth Error:", error);
-            return null;
+            console.error("Supabase Auth Error:", error.message);
+            return { user: null, error };
         }
-        return data.user;
-    } catch (e) {
+        return { user: data.user, error: null };
+    } catch (e: any) {
         console.error("Auth Exception:", e);
-        return null;
+        return { user: null, error: e };
     }
 };
