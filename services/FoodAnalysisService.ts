@@ -6,7 +6,7 @@
 
 import { supabase } from './Supabase';
 import { AnalysisResult } from './ai/types';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 

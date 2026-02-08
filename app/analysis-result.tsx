@@ -58,10 +58,10 @@ export default function AnalysisResultScreen() {
                 setError("Image is too large. Please use a smaller image.");
             } else if (e.message?.toLowerCase().includes('duplicate')) {
                 setError("You already analyzed this image recently. Try a different photo.");
-            } else if (e.message) {
-                setError(e.message);
+            } else if (e.message?.toLowerCase().includes('readasstringasync') || e.message?.toLowerCase().includes('filesystem')) {
+                setError("System error accessing image. We are working on a fix.");
             } else {
-                setError("Could not analyze image. Please try again.");
+                setError("Could not analyze image. Please try again or take a new photo.");
             }
         } finally {
             setIsLoading(false);
