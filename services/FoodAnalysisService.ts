@@ -4,7 +4,7 @@
  * This allows updating AI models server-side without app deployment
  */
 
-import { supabase } from './supabase';
+import { supabase } from './Supabase';
 import { AnalysisResult } from './ai/types';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -26,7 +26,7 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
 
         // 2. Convert to base64
         const base64 = await FileSystem.readAsStringAsync(manipResult.uri, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: 'base64',
         });
 
         // 3. Call Supabase Edge Function
