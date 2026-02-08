@@ -210,7 +210,7 @@ serve(async (req) => {
                     { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
                 ]
             }],
-            generationConfig: { response_mime_type: "application/json" }
+            generationConfig: { responseMimeType: "application/json" }
         };
 
         // Try models in fallback chain with timeout
@@ -321,7 +321,7 @@ serve(async (req) => {
                     { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
                 ]
             }],
-            generationConfig: { response_mime_type: "application/json" }
+            generationConfig: { responseMimeType: "application/json" }
         };
 
         // Try models in fallback chain with timeout
