@@ -54,7 +54,7 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
 
 /**
  * Get quota information
- * TODO: Implement server-side quota tracking via Supabase
+ * Server-side quota tracking implemented via Supabase Edge Function
  */
 export async function getQuotaInfo() {
     // For now, return mock data

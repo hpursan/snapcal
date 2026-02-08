@@ -17,41 +17,53 @@ export default function AnalysisResultScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [result, setResult] = useState<AnalysisResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
 
     // Simulation Mode: Date Picker
     const [date, setDate] = useState(new Date());
     const [showDatePicker, setShowDatePicker] = useState(false);
 
+    const performAnalysis = async () => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const data = await analyzeFoodImage(imageUri as string);
+            setResult(data);
+            setRetryCount(0); // Reset retry count on success
+        } catch (e: any) {
+            console.error("Analysis Error Details:", {
+                message: e.message,
+                type: e.type,
+                name: e.name,
+            });
+
+            // Provide user-friendly error messages
+            if (e.message?.toLowerCase().includes('rate limit') ||
+                e.message?.toLowerCase().includes('quota') ||
+                e.message?.includes('429')) {
+                setError("You've reached your daily limit. Try again tomorrow.");
+            } else if (e.message?.toLowerCase().includes('network') ||
+                e.message?.toLowerCase().includes('connection')) {
+                setError("Network connection issue. Please check your internet and try again.");
+            } else if (e.message?.toLowerCase().includes('too large') ||
+                e.message?.includes('413')) {
+                setError("Image is too large. Please use a smaller image.");
+            } else if (e.message?.toLowerCase().includes('duplicate')) {
+                setError("You already analyzed this image recently. Try a different photo.");
+            } else if (e.message) {
+                setError(e.message);
+            } else {
+                setError("Could not analyze image. Please try again.");
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!imageUri) return;
-
-        const analyze = async () => {
-            try {
-                // Analysis happens here
-                const data = await analyzeFoodImage(imageUri as string);
-                setResult(data);
-            } catch (e: any) {
-                console.error("Analysis Error Details:", {
-                    message: e.message,
-                    type: e.type,
-                    name: e.name,
-                    stack: e.stack
-                });
-
-                // Use the actual error message from AIError
-                if (e.message) {
-                    setError(e.message);
-                } else if (e.message?.includes('429') || e.message?.toLowerCase().includes('quota') || e.message?.toLowerCase().includes('rate limit')) {
-                    setError("QUOTA_EXCEEDED");
-                } else {
-                    setError("Could not analyze image. Check connection.");
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        analyze();
+        performAnalysis();
     }, [imageUri]);
 
     const handleSave = async () => {
@@ -69,7 +81,7 @@ export default function AnalysisResultScreen() {
             // Go back to home
             router.replace('/(tabs)');
         } catch (e: any) {
-            console.log("Save Error:", e);
+            console.error("Save Error:", e);
             Alert.alert("Error", `Failed to save: ${e.message}`);
         }
     };
@@ -90,7 +102,7 @@ export default function AnalysisResultScreen() {
     }
 
     if (error || !result) {
-        const isQuota = error === "QUOTA_EXCEEDED";
+        const isQuota = error?.includes('daily limit');
 
         return (
             <View style={[styles.container, isDark && styles.darkContainer, styles.center, { padding: 32 }]}>
@@ -102,18 +114,31 @@ export default function AnalysisResultScreen() {
                 />
 
                 <Text style={[styles.errorTitle, isDark && styles.darkText]}>
-                    {isQuota ? "Whoa, Slow Down!" : "Analysis Failed"}
+                    {isQuota ? "Daily Limit Reached" : "Analysis Failed"}
                 </Text>
 
                 <Text style={[styles.errorText, isDark && styles.darkText]}>
-                    {isQuota
-                        ? "We've hit our free AI request limit for the moment. Please wait a minute and try again."
-                        : (error || "Unknown Error")
-                    }
+                    {error || "Unknown Error"}
                 </Text>
 
-                <TouchableOpacity style={[styles.secondaryButton, { width: '100%', marginTop: 20, flex: 0 }]} onPress={() => router.back()}>
-                    <Text style={styles.secondaryButtonText}>Go Back</Text>
+                {/* Retry Button (only if not quota or duplicate error) */}
+                {!isQuota && !error?.includes('duplicate') && (
+                    <TouchableOpacity
+                        style={[styles.primaryButton, { width: '100%', marginTop: 20, flex: 0 }]}
+                        onPress={() => {
+                            setRetryCount(retryCount + 1);
+                            performAnalysis();
+                        }}
+                    >
+                        <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+                        <Text style={styles.primaryButtonText}>
+                            Retry {retryCount > 0 ? `(Attempt ${retryCount + 1})` : ''}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={[styles.secondaryButton, { width: '100%', marginTop: 12, flex: 0 }]} onPress={() => router.back()}>
+                    <Text style={styles.secondaryButtonText}>Take New Photo</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -260,10 +285,12 @@ const styles = StyleSheet.create({
     buttonRow: { flexDirection: 'row', gap: 16 },
     primaryButton: {
         flex: 1,
+        flexDirection: 'row',
         backgroundColor: '#007AFF',
         paddingVertical: 16,
         borderRadius: 12,
         alignItems: 'center',
+        justifyContent: 'center',
         shadowColor: '#007AFF',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,

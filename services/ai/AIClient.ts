@@ -1,6 +1,12 @@
 /**
  * AI Client
  * Low-level wrapper for Gemini API
+ * 
+ * @deprecated This client is no longer used in production.
+ * We now use Supabase Edge Functions (see FoodAnalysisService.ts)
+ * for better security, stability, and server-side model updates.
+ * 
+ * Kept for reference only.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -25,8 +31,7 @@ export class AIClient {
         this.genAI = new GoogleGenerativeAI(API_KEY);
 
         // Use current stable model (as of Feb 2026)
-        // TODO: Move to Supabase Edge Function for production stability
-        // This allows updating model without app deployment
+        // Production now uses Supabase Edge Function for stability
         this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     }
 

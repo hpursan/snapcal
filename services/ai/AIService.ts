@@ -1,6 +1,12 @@
 /**
  * AI Service
  * Production-grade AI analysis with retry logic, circuit breaker, and quota management
+ * 
+ * @deprecated This service is no longer used in production.
+ * We now use Supabase Edge Functions (see FoodAnalysisService.ts)
+ * for better security, stability, and server-side model updates.
+ * 
+ * Kept for reference only.
  */
 
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
