@@ -167,7 +167,7 @@ export default function AnalysisResultScreen() {
                 {/* Retry Button (only if not quota or duplicate error) */}
                 {!isQuota && !error?.includes('duplicate') && (
                     <TouchableOpacity
-                        style={[styles.primaryButton, { width: '100%', marginTop: 20, flex: 0 }]}
+                        style={[styles.primaryButton, { width: '100%', marginTop: 24, flex: 0 }]}
                         onPress={() => {
                             setRetryCount(retryCount + 1);
                             performAnalysis();
@@ -180,8 +180,19 @@ export default function AnalysisResultScreen() {
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity style={[styles.secondaryButton, { width: '100%', marginTop: 12, flex: 0 }]} onPress={() => router.back()}>
+                <TouchableOpacity
+                    style={[styles.secondaryButton, { width: '100%', marginTop: !isQuota ? 12 : 24, flex: 0 }]}
+                    onPress={() => router.back()}
+                >
+                    <Ionicons name="camera" size={20} color="#333" style={{ marginRight: 8 }} />
                     <Text style={styles.secondaryButtonText}>Take New Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.tertiaryButton}
+                    onPress={() => router.replace('/(tabs)')}
+                >
+                    <Text style={styles.tertiaryButtonText}>Cancel & Exit to Dashboard</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -356,4 +367,15 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
     },
     secondaryButtonText: { color: '#333', fontSize: 16, fontWeight: '600' },
+    tertiaryButton: {
+        marginTop: 24,
+        padding: 8,
+        alignItems: 'center',
+    },
+    tertiaryButtonText: {
+        color: '#888',
+        fontSize: 15,
+        fontWeight: '500',
+        textDecorationLine: 'underline',
+    },
 });
