@@ -88,9 +88,16 @@ export default function AnalysisResultScreen() {
             } else if (e.message?.toLowerCase().includes('readasstringasync') || e.message?.toLowerCase().includes('filesystem')) {
                 setError("System error accessing image. We are working on a fix.");
             } else {
-                // EXPOSE RAW ERROR FOR DEBUGGING - The user needs to see the truth to help us fix it
+                // In production, we hide the raw technical error and show a polite fallback.
+                // In dev/test, we show the raw message to help debugging.
+                const isProd = !__DEV__;
                 const rawMsg = e.message || JSON.stringify(e);
-                setError(`Analysis Failed: ${rawMsg}`);
+
+                if (isProd) {
+                    setError("Something went wrong with the analysis. Please try again in a moment.");
+                } else {
+                    setError(`Analysis Failed: ${rawMsg}`);
+                }
             }
         } finally {
             setIsLoading(false);
