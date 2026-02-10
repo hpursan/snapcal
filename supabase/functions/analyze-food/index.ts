@@ -8,10 +8,20 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB in base64
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 const DEDUP_WINDOW_MINUTES = 5;
 
-function getCorsHeaders() {
+function getCorsHeaders(origin: string | null) {
+    const allowedOrigins = [
+        'capacitor://localhost',
+        'http://localhost',
+        'http://localhost:8081',
+        'https://ujpsucxudckaxrljpdwo.supabase.co'
+    ];
+
+    const isAllowed = origin && allowedOrigins.includes(origin);
+
     return {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Vary': 'Origin'
     };
 }
 
@@ -32,7 +42,22 @@ async function hashImage(base64: string): Promise<string> {
 }
 
 serve(async (req) => {
-    const corsHeaders = getCorsHeaders();
+    const origin = req.headers.get('Origin');
+    const corsHeaders = getCorsHeaders(origin);
+
+    // Validate required environment variables
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_KEY');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !GEMINI_API_KEY) {
+        console.error('Missing critical environment variables');
+        return new Response(JSON.stringify({ error: 'Internal Server Error', message: 'Service configuration incomplete' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500,
+        });
+    }
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -122,6 +147,14 @@ serve(async (req) => {
 
         if (deviceCountError) {
             console.error('Rate limit check error:', deviceCountError);
+            // FAIL CLOSED: If we can't verify quota, deny request
+            return new Response(JSON.stringify({
+                error: 'Service unavailable',
+                message: 'Could not verify your usage quota. Please try again later.'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 503,
+            });
         }
 
         if (deviceCount !== null && deviceCount >= RATE_LIMIT_PER_DAY) {
