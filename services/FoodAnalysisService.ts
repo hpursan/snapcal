@@ -1,11 +1,17 @@
-/**
- * Food Analysis Service
- * Uses Supabase Edge Function for production stability
- * This allows updating AI models server-side without app deployment
- */
-
+// Local type definitions to replace deleted services/ai/types
+export interface AnalysisResult {
+    mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    energyBand: 'very_light' | 'light' | 'moderate' | 'heavy' | 'very_heavy';
+    confidence: 'high' | 'medium' | 'low';
+    reasoning: string;
+    flags: {
+        mixedPlate: boolean;
+        unclearPortions: boolean;
+        sharedDish: boolean;
+    };
+    insight: string;
+}
 import { supabase } from './Supabase';
-import { AnalysisResult } from './ai/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
@@ -13,8 +19,6 @@ import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-
-export type { AnalysisResult };
 
 /**
  * Analyze food image via Supabase Edge Function
@@ -69,7 +73,18 @@ export async function analyzeFoodImage(uri: string): Promise<AnalysisResult> {
         });
 
         if (error) {
-            throw new Error(error.message || 'Analysis failed');
+            console.error('Edge Function Error:', error);
+
+            let msg = error.message;
+
+            // If it's the generic Supabase non-2xx message, we know it's likely a 400 Not Food
+            // (since 500s are caught by the FATAL log and 429s have 'limit' or 'quota' in them)
+            if (msg.includes('non-2xx')) {
+                // Return a message that includes 'food' so analysis-result.tsx recognizes it
+                msg = "This image doesn't appear to contain food. Please try a clearer shot of your meal.";
+            }
+
+            throw new Error(msg || 'Analysis failed');
         }
 
         return data as AnalysisResult;
