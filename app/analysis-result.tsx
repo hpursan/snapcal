@@ -10,6 +10,8 @@ import { ENERGY_BAND_LABELS } from '@/types/Meal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase, signInAnonymously } from '@/services/Supabase';
 import { logger } from '@/services/LogService';
+import * as Haptics from 'expo-haptics';
+import { Colors } from '@/constants/Colors';
 
 export default function AnalysisResultScreen() {
     const router = useRouter();
@@ -122,7 +124,17 @@ export default function AnalysisResultScreen() {
                 createdAt: date.toISOString() // Simulation Mode
             });
             // Go back to home
-            router.replace('/(tabs)');
+            try {
+                // Success haptic
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+                router.replace('/(tabs)/history');
+            } catch (e: any) {
+                console.error("Navigation/Haptic Error after save:", e);
+                // Even if haptic/navigation fails, the meal is saved, so we still navigate.
+                // This catch block is primarily for logging unexpected issues with Haptics/router.replace
+                router.replace('/(tabs)/history'); // Ensure navigation happens even if haptic fails
+            }
         } catch (e: any) {
             console.error("Save Error:", e);
             Alert.alert("Error", `Failed to save: ${e.message}`);
@@ -230,44 +242,45 @@ export default function AnalysisResultScreen() {
                 </View>
 
                 {/* Date Simulation */}
-                <View style={styles.dateSection}>
-                    <Text style={styles.dateLabel}>Date: {date.toLocaleDateString()}</Text>
-                    {showDatePicker && (
+                <TouchableOpacity
+                    style={styles.dateSelector}
+                    onPress={() => setShowDatePicker(true)}
+                >
+                    <Ionicons name="calendar-outline" size={16} color={Colors.dark.primary} />
+                    <Text style={styles.dateLabel}>Date: <Text style={styles.dateValue}>{date.toLocaleDateString()}</Text></Text>
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                    <View style={styles.pickerContainer}>
                         <DateTimePicker
                             testID="dateTimePicker"
                             value={date}
                             mode="date"
                             display="spinner"
                             onChange={handleDateChange}
-                            maximumDate={new Date()} // Can't eat in the future
+                            maximumDate={new Date()}
                         />
-                    )}
-
-                    {!showDatePicker && Platform.OS === 'android' && (
-                        <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-                            <Text style={{ color: '#007AFF' }}>Change Date</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-
-                {/* Buttons */}
-                <View style={styles.buttonRow}>
-                    <TouchableOpacity
-                        style={styles.secondaryButton}
-                        onPress={() => setShowDatePicker(!showDatePicker)}
-                    >
-                        <Text style={styles.secondaryButtonText}>
-                            {showDatePicker ? "Done" : "Adjust Date"}
-                        </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.primaryButton} onPress={handleSave}>
-                        <Text style={styles.primaryButtonText}>Add to Insights</Text>
-                    </TouchableOpacity>
-                </View>
+                        {Platform.OS === 'ios' && (
+                            <TouchableOpacity
+                                style={styles.pickerDoneButton}
+                                onPress={() => setShowDatePicker(false)}
+                            >
+                                <Text style={styles.pickerDoneText}>Done</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
             </View>
-        </ScrollView>
+
+
+            {/* Buttons */}
+            <View style={styles.buttonRow}>
+                <TouchableOpacity style={styles.primaryButton} onPress={handleSave}>
+                    <Ionicons name="save-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.primaryButtonText}>Capture Insight</Text>
+                </TouchableOpacity>
+            </View>
+        </ScrollView >
     );
 }
 
@@ -336,21 +349,22 @@ const styles = StyleSheet.create({
     dateSection: { alignItems: 'center', marginBottom: 24 },
     dateLabel: { fontSize: 14, color: '#888', marginBottom: 8 },
 
-    buttonRow: { flexDirection: 'row', gap: 16 },
+    buttonRow: { flexDirection: 'row', gap: 16, marginTop: 8 },
     primaryButton: {
         flex: 1,
         flexDirection: 'row',
-        backgroundColor: '#007AFF',
-        paddingVertical: 16,
-        borderRadius: 12,
+        backgroundColor: Colors.dark.primary,
+        paddingVertical: 18,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#007AFF',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowColor: Colors.dark.primary,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+        elevation: 6,
     },
-    primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: 0.5 },
 
     secondaryButton: {
         flex: 1,
@@ -373,9 +387,45 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     tertiaryButtonText: {
-        color: '#888',
-        fontSize: 15,
+        color: '#999',
+        fontSize: 14,
         fontWeight: '500',
         textDecorationLine: 'underline',
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        gap: 8,
+        borderWidth: 1,
+        borderColor: '#eee',
+        alignSelf: 'center',
+    },
+    dateValue: {
+        fontWeight: '700',
+        color: '#1a1a1a',
+    },
+    pickerContainer: {
+        width: '100%',
+        backgroundColor: '#fff',
+        marginTop: 12,
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#eee',
+    },
+    pickerDoneButton: {
+        padding: 12,
+        backgroundColor: '#f8f9fa',
+        alignItems: 'center',
+        borderTopWidth: 1,
+        borderTopColor: '#eee',
+    },
+    pickerDoneText: {
+        color: Colors.dark.primary,
+        fontWeight: 'bold',
     },
 });

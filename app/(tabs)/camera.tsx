@@ -1,11 +1,11 @@
-import { StyleSheet, View, Text, TouchableOpacity, Image, Button, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Image, Button, ActivityIndicator, useColorScheme } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useState, useRef } from 'react';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { launchImageLibraryAsync, MediaTypeOptions } from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 
 export default function CameraScreen() {
     const router = useRouter();
@@ -40,6 +40,7 @@ export default function CameraScreen() {
                     skipProcessing: false,
                 });
                 if (result?.uri) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                     setPhoto(result.uri);
                 }
             } catch (e) {
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     analyzeButton: {
-        backgroundColor: Colors.dark.tint,
+        backgroundColor: Colors.light.tint, // Use Pink for primary action
         paddingVertical: 15,
         paddingHorizontal: 25,
         borderRadius: 30,
